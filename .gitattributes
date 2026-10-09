@@ -1,0 +1,19 @@
+# Normalise line endings to LF in the repository.
+#
+# Windows checkout conversion produces a CRLF working tree, which makes every
+# file look modified after a fresh clone on some configurations. Pinning LF
+# keeps the repository checkout-stable across Linux, macOS and Windows.
+
+* text=auto eol=lf
+
+# Binary assets must never be line-ending converted.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.webm binary
+*.mp4 binary
+*.woff binary
+*.woff2 binary
