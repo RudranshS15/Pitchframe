@@ -17,11 +17,15 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 from .schema import MatchEvent, Team
 
 __all__ = [
     "METRICS",
+    "METRIC_SPECS",
+    "MetricSpec",
+    "evaluate",
     "compute",
     "in_window",
     "possession_share",
@@ -225,6 +229,70 @@ METRICS: dict[str, Callable[..., float]] = {
     "peak_speed": peak_speed,
     "longest_pressure_pass_streak": longest_pressure_pass_streak,
 }
+
+
+@dataclass(frozen=True, slots=True)
+class MetricSpec:
+    """What a metric needs in order to be evaluated, and what shape it returns.
+
+    The Verifier has to evaluate a claim knowing nothing about the metric beyond
+    its name, and the metrics do not share a calling convention: ``pass_accuracy``
+    demands a team, ``momentum`` rejects one, and ``possession_share`` returns a
+    mapping rather than a number. Capturing that as data rather than prose is what
+    lets a claim carry only ``(metric, team)`` and still be checked.
+    """
+
+    fn: Callable[..., object]
+    #: The metric cannot be evaluated without a team.
+    requires_team: bool = False
+    #: The metric returns ``{"home": float, "away": float}`` rather than a scalar.
+    per_team: bool = False
+
+
+#: Evaluation contract for every entry in :data:`METRICS`. Kept separate from the
+#: registry so that ``METRICS`` stays a plain name-to-callable map.
+METRIC_SPECS: dict[str, MetricSpec] = {
+    "possession_share": MetricSpec(possession_share, per_team=True),
+    "pass_accuracy": MetricSpec(pass_accuracy, requires_team=True),
+    "pass_difficulty_mean": MetricSpec(pass_difficulty_mean, requires_team=True),
+    "pressure_index": MetricSpec(pressure_index),
+    "momentum": MetricSpec(momentum),
+    "chaos_index": MetricSpec(chaos_index),
+    "peak_speed": MetricSpec(peak_speed),
+    "longest_pressure_pass_streak": MetricSpec(
+        longest_pressure_pass_streak, requires_team=True
+    ),
+}
+
+
+def evaluate(metric: str, events: Sequence[MatchEvent], team: Team | None = None) -> float:
+    """Reduce any registered metric to a single number for one side.
+
+    This is the bridge between the registry's varied signatures and the one thing a
+    claim needs: a comparable scalar. A ``None`` team for a per-team metric reads the
+    home side, which keeps the calling convention total rather than partial.
+
+    Raises:
+        KeyError: if ``metric`` is not registered.
+        ValueError: if the metric needs a team and none could be resolved.
+    """
+    if metric not in METRIC_SPECS:
+        known = ", ".join(sorted(METRIC_SPECS))
+        raise KeyError(f"unknown metric {metric!r}; known metrics are: {known}")
+
+    spec = METRIC_SPECS[metric]
+    side: Team = team or "home"
+
+    if spec.per_team:
+        shares = spec.fn(events)
+        if not isinstance(shares, dict) or side not in shares:
+            raise ValueError(f"{metric!r} did not return a value for team {side!r}")
+        return float(shares[side])
+
+    if spec.requires_team:
+        return float(spec.fn(events, side))
+
+    return float(spec.fn(events))
 
 
 def compute(metric: str, events: Sequence[MatchEvent], **kwargs: object) -> float:
