@@ -102,6 +102,35 @@ class ShapeTests(unittest.TestCase):
         self.assertTrue(speeds)
         self.assertTrue(all(s > 0 for s in speeds))
 
+    def test_speeds_are_football_plausible(self) -> None:
+        """Realism is a claim the README makes, so it is asserted, not assumed.
+
+        ``speed_kmh`` is ball speed. A pass is struck hard enough to reach its
+        target; a shot is struck hard enough to beat a keeper, so shots are
+        consistently the faster ball. A model that scaled pass speed linearly from
+        zero satisfied every "is it positive" check while turning an ordinary 40 m
+        pass into a 130 km/h ball, which is why the band is pinned here rather than
+        left to visual inspection.
+        """
+        passes = [e.speed_kmh for e in self.events if e.type == "pass"]
+        shots = [e.speed_kmh for e in self.events if e.type == "shot"]
+
+        self.assertTrue(passes)
+        self.assertTrue(shots)
+
+        # Upper bounds catch the plausible-looking-but-wrong tail.
+        self.assertLessEqual(max(passes), 95.0)
+        self.assertLessEqual(max(shots), 125.0)
+        self.assertGreaterEqual(min(shots), 60.0)
+
+        mean_pass = sum(passes) / len(passes)
+        mean_shot = sum(shots) / len(shots)
+        self.assertLess(
+            mean_pass,
+            mean_shot,
+            f"passes ({mean_pass:.1f} km/h) should be slower than shots ({mean_shot:.1f} km/h)",
+        )
+
 
 class TrademarkGuardTests(unittest.TestCase):
     """The rules forbid third-party marks, so no real entity may appear."""

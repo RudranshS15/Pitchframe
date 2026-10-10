@@ -279,7 +279,14 @@ def generate_match(seed: int, match_id: str = "PF-001") -> Match:
                 from_xy=ball,
                 to_xy=target_xy,
                 outcome="success" if completed else "fail",
-                speed_kmh=round(max(12.0, distance * rng.uniform(1.8, 3.4)), 1),
+                # Ball speed, not player speed. A pass is struck firmly enough to
+                # reach its target, so it starts around 20 km/h and gains roughly a
+                # km/h per metre. Scaling linearly from zero — the obvious first
+                # model — put an ordinary 40 m pass above 100 km/h, which is a shot.
+                speed_kmh=round(
+                    min(92.0, rng.uniform(18.0, 30.0) + distance * rng.uniform(0.8, 1.4)),
+                    1,
+                ),
                 pressure=round(pressure, 3),
             )
             if completed:

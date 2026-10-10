@@ -1,0 +1,43 @@
+# Pitchframe — the optional language-model layer.
+#
+# You do NOT need any of this to run the core system. The generator, the stats
+# engine and the CLI are standard library only:
+#
+#     python -m pitchframe --seed 7
+#
+# Install this file when you want the agent pipeline (Narrator and Verifier) or the
+# live overlay with a real model behind it. The offline tier needs no dependencies
+# at all, but it does need agent-framework, which is what this file is for.
+#
+#     py -3.13 -m venv .venv
+#     .venv/Scripts/python -m pip install -r requirements.txt    # Windows
+#     .venv/bin/python -m pip install -r requirements.txt        # macOS / Linux
+#
+# ---------------------------------------------------------------------------
+# Python 3.13 is the pinned target, not the newest release.
+#
+# 3.14 is newer but the dependency chain (pydantic-core, numpy, pythonnet,
+# grpcio) does not ship wheels for it yet, so installing there means building
+# from source or failing outright. 3.13 is what the README asks judges to use.
+# ---------------------------------------------------------------------------
+#
+# Only the packages this project imports by name are pinned. agent-framework is a
+# meta-package that pulls in roughly two hundred transitive dependencies, and
+# pinning all of them here would be noise that rots within a week. Everything else
+# resolves through it.
+#
+# Verified working together on Windows 11 / CPython 3.13.13.
+
+# The agent runtime: Agent, BaseChatClient, FunctionInvocationLayer, FunctionTool,
+# and the Foundry and Ollama chat clients.
+agent-framework==1.21.0
+
+# AzureCliCredential and DefaultAzureCredential. Using a credential object rather
+# than an API key means there is no key to leak into the repository or a log.
+azure-identity==1.26.0
+
+# The live overlay server. These already arrive transitively through
+# agent-framework, but they are declared because we import them directly and a
+# transitive dependency is not a stable interface.
+fastapi==0.141.1
+uvicorn==0.54.0

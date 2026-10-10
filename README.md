@@ -33,22 +33,24 @@ python -m pitchframe --seed 7
 ```
 
 ```text
-Northgate Athletic  3 - 3  Riverside United
-match PF-001 | 1520 events
+Northgate Athletic  3 - 2  Riverside United
+match PF-001 | 1544 events
 
-  possession          home 49.2%  away 50.8%
-  pass accuracy       home 77.6%  away 77.0%
-  pass difficulty     home 0.363  away 0.364
-  pressure index      home 0.483  away 0.485
-  chaos index         0.446   (0 = controlled, 1 = frantic)
-  momentum            -7.6  (positive favours home)
-  peak speed          pass 83.5 km/h | shot 115.9 km/h
-  longest press. streak  home 8  away 5
+  possession          home 60.3%  away 39.7%
+  pass accuracy       home 76.8%  away 68.8%
+  pass difficulty     home 0.357  away 0.354
+  pressure index      home 0.492  away 0.462
+  chaos index         0.459   (0 = controlled, 1 = frantic)
+  momentum            +72.6  (positive favours home)
+  peak speed          pass 60.5 km/h | shot 120.3 km/h
+  longest press. streak  home 4  away 3
 
   key moments
-    22'  goal     home Caswell    pressure 0.85
-    43'  shot     away Halbeck    pressure 0.91
-    36'  shot     home Dannov     pressure 0.88
+    63'  goal     away Brenwell   pressure 0.76
+    05'  goal     home Nikrado    pressure 0.65
+    54'  goal     away Danholm    pressure 0.62
+    44'  shot     home Nikrado    pressure 0.84
+    79'  shot     home Mirbeck    pressure 0.80
 ```
 
 Add `--json` for the machine-readable form that later stages consume:
