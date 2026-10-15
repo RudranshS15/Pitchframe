@@ -3,9 +3,10 @@
 Real-time match intelligence from synthetic football events — turning a raw event
 stream into explainable, personalised narratives.
 
-> **Status: early.** The synthetic data generator and the analytics engine are
-> implemented and tested (45 tests). The agent layer, the overlay, and the
-> evaluation harness are in progress. See [Roadmap](#roadmap).
+> **Status: working end to end.** The generator, the analytics engine, the claim
+> layer, the Narrator/Verifier loop, the live overlay and the goal build-up panel
+> are implemented and tested (363 tests). See [Roadmap](#roadmap) for what is still
+> open.
 
 ---
 
@@ -33,24 +34,24 @@ python -m pitchframe --seed 7
 ```
 
 ```text
-Northgate Athletic  3 - 2  Riverside United
-match PF-001 | 1544 events
+Northgate Athletic  1 - 0  Riverside United
+match PF-001 | 1514 events
 
-  possession          home 60.3%  away 39.7%
-  pass accuracy       home 76.8%  away 68.8%
-  pass difficulty     home 0.357  away 0.354
-  pressure index      home 0.492  away 0.462
-  chaos index         0.459   (0 = controlled, 1 = frantic)
-  momentum            +72.6  (positive favours home)
-  peak speed          pass 60.5 km/h | shot 120.3 km/h
-  longest press. streak  home 4  away 3
+  possession          home 53.3%  away 46.7%
+  pass accuracy       home 75.0%  away 74.0%
+  pass difficulty     home 0.338  away 0.350
+  pressure index      home 0.472  away 0.476
+  chaos index         0.447   (0 = controlled, 1 = frantic)
+  momentum            +42.4  (positive favours home)
+  peak speed          pass 64.5 km/h | shot 115.7 km/h
+  longest press. streak  home 6  away 5
 
   key moments
-    63'  goal     away Brenwell   pressure 0.76
-    05'  goal     home Nikrado    pressure 0.65
-    54'  goal     away Danholm    pressure 0.62
-    44'  shot     home Nikrado    pressure 0.84
-    79'  shot     home Mirbeck    pressure 0.80
+    60'  goal     home Tomek      pressure 0.46
+    05'  shot     away Brenwell   pressure 0.83
+    75'  shot     away Tomquist   pressure 0.76
+    46'  shot     home Brendahl   pressure 0.74
+    00'  shot     home Brendahl   pressure 0.73
 ```
 
 Add `--json` for the machine-readable form that later stages consume:
@@ -87,6 +88,82 @@ Re-run with `--inject-fault none` for the honest baseline: **zero** rejections,
 because the scripted narrator reads the measured directions correctly. The fault is
 what gets caught, not a failure the system arranged for itself.
 
+### The live overlay
+
+The overlay is the layer above: a match feed in which every published line carries
+its own receipt.
+
+```bash
+python -m pip install -r requirements.txt   # fastapi + uvicorn, overlay only
+python -m pitchframe --overlay              # then open http://127.0.0.1:8000
+```
+
+Two views over the same verified data. **Fan** is the readable match feed — no
+receipts, no rail, and no rejected lines, because a rejected claim is one the system
+refused to publish and showing it to a fan would put a wrong statement in front of
+the reader it was withheld from. **Analyst** shows the claim being checked with
+`claimed` beside `measured` and a stamp, keeps every rejected claim in the feed struck
+through, and pins the running tallies beside the commentary.
+
+```
+  VERIFIED   longest pressure pass streak · Riverside United
+  Riverside United are stringing passes together under pressure.
+  claimed up +1.00 · measured up +1.00
+
+  REJECTED   momentum   planted fault
+  The balance of threat has tipped toward Northgate Athletic.
+  claimed up +15.20 · measured down -15.20
+
+  CORRECTED  momentum
+  The balance of threat has tipped toward Riverside United.
+  claimed down -15.20 · measured down -15.20
+```
+
+One real second is one match minute at 1×, so a whole match plays in about ninety
+seconds. `?fault=narrator-invert` plants one wrong direction per window so the catch
+is visible; every planted row is labelled as planted.
+
+The URL is a description of the frame on screen — the view, the match second, and the
+build-up panel if one is open — so a glitch can be handed to somebody else as a link,
+which opens paused on exactly that second.
+
+Behind the page is a sea of slats that swells, catches light on its crests and is stirred
+by the cursor. It is a port of the React Bits **MicroSlats** component to a module with no
+framework — this project has no React and no bundler — with its one dependency (`ogl`)
+vendored so the overlay still runs with no network. It is inert: it can never take a click
+from a control, it freezes for `prefers-reduced-motion`, and if the browser has no WebGL2
+the page is exactly what it was without it.
+
+The controls on that page are ports too: the Fan/Analyst switch and the 1×/4×/16× group are
+React Bits' **RubberSegment**, the bar floating at the foot of the viewport is its **Dock**
+— play/pause, the speed as a checked menu, either view, every goal build-up the replay has
+reached, a button that copies a link to the frame on screen, and a menu that lists every key
+the page answers to — and the seek across the match is its **WakeSlider**, a track that
+lifts into a wake around the handle as it is dragged. All were ported for the same reason as
+the sea, their licences travel beside them, and the dock duplicates the transport on
+purpose: one state, three views of it. The keyboard is a fourth way in — `Space` plays and pauses, the arrows
+seek by one analysed window, `1`/`2`/`3` are the three speeds and `F`/`A` the two views — and
+the dock's last menu is that list. Details, parameters and the architecture are in
+[docs/overlay.md](docs/overlay.md).
+
+### The goal build-up panel
+
+Clicking a goal on the timeline opens the move that produced it: the pitch in plain
+SVG, the ball carried along every touch in order, a step counter, a replay button and
+a 0.5×/1× speed toggle. The move summary beside it states the step count, the ball
+travel in the schema's own normalised units, the duration in seconds and the third of
+the pitch possession started in.
+
+Two things about it are deliberate. First, **recorded touches and inferred ones are
+drawn differently** — a carry is a recorded event and is drawn solid and heavier than
+a pass, while an *inferred* step is dashed and amber, and adds the *derived carries*
+label. No generated match produces an inferred step: our stream accounts for every
+metre the ball travels, and unexplained movement is exactly what a carry is — so the
+inference is there for imported feeds and fixtures, not as a decoration.
+Second, **the panel labels its own provenance**: every highlight carries *synthetic
+match*, and it never describes itself as footage or as tracking data, because it is
+neither. No dependency and no build step was added for any of it.
+
 Requires Python 3.10+. Developed against **3.13**.
 
 ## Why synthetic data
@@ -102,6 +179,11 @@ a deliberate constraint, not a shortcut:
   spells, a dominant possession side — can be generated on demand instead of
   waited for.
 
+None of the analytics here are invented from scratch. What we read, what it costs
+in licensing terms, and which gaps it exposes in our own metrics are recorded in
+[docs/prior-art.md](docs/prior-art.md) — including the reason our verification rate
+must not be read as a detection rate.
+
 ## Architecture
 
 ```text
@@ -109,6 +191,7 @@ pitchframe/
   schema.py        Domain types. One MatchEvent vocabulary shared by everything.
   generator.py     Seeded synthetic match generation.
   stats.py         Deterministic analytics + the published metric registry.
+  highlights.py    Goal build-up: the path a move took, and what is inferred. Pure.
   claims.py        Structured claims, and the arithmetic that rules on them.
   agents/
     pipeline.py    Snapshot, trace, and the propose -> verify -> retry loop.
@@ -118,6 +201,13 @@ pitchframe/
   llm/
     provider.py    Which model tier is live, and why. Standard library only.
     offline.py     The scripted client. No network, no credentials, no quota.
+  overlay/
+    replay.py      The deterministic script behind the live page. Stdlib only.
+    commentary.py  Turns a checked claim into a sentence. Stdlib only.
+    server.py      FastAPI shell (requires fastapi and uvicorn).
+    static/        The page, and the three ports it draws with: slats.js (the sea),
+                   rubber-segment.js (the switch and the speeds), dock.js (the bar).
+    static/vendor/ ogl, vendored and tree-shaken, and the ports' upstream licence.
   __main__.py      CLI entry point.
 tests/
 ```
@@ -155,6 +245,28 @@ Three properties are load-bearing:
 Every metric the system may claim about is registered in `stats.METRICS`, and
 anything outside that registry is rejected before any arithmetic runs.
 
+### Reading the model's reply
+
+A model rarely returns the schema exactly as asked. Replies arrive inside code
+fences, trailed by commentary, keyed with names the schema never mentioned, or
+nested in an envelope object like `{"claims": [...]}`. None of that changes what is
+being claimed, so `claims.py` looks through the packaging rather than rejecting it:
+
+- `extract_json_payloads` scans for balanced JSON spans anywhere in the reply. A
+  stray `{` in the prose — "I skipped {window 200-300 because it has not closed" —
+  costs that one span and nothing else.
+- `iter_claim_payloads` unwraps envelope objects and flattens nested arrays, so
+  `{"claims": [[...]]}` reads the same as a bare array of claims.
+- `parse_claim` resolves key spellings through a bounded allowlist — `metric_name`,
+  `trend`, `period`, `claimId` and friends — and treats the case of `up`/`down` as
+  spelling. A missing field is reported along with the keys that did arrive,
+  because that message is what the retry prompt is built from.
+
+The line is drawn at packaging and spelling. Value *synonyms* are still rejected — a
+`direction` of `"rising"` is not read as `"up"` — because accepting one means
+inferring an intent the model did not express, and inferring intent is the failure
+this layer exists to prevent.
+
 ### Running against a real model
 
 The model-backed agents need `agent-framework` and are chosen automatically by tier:
@@ -183,9 +295,11 @@ python -m unittest discover -s tests -t .
 - [x] Narrator and Verifier agents with the reject-and-retry loop
 - [x] Provider tiers with honest fallback reporting
 - [x] Microsoft Agent Framework evaluated and integrated
+- [x] Live overlay with an analyst view and a fan view
+- [x] Goal build-up panel: possession chains, the path to a goal, labelled inferences
 - [ ] Analyst and Personaliser agents
-- [ ] Live overlay with an analyst view and a fan view
 - [ ] Evaluation harness reporting rejection, fallback and latency figures
+- [ ] Live event feed in place of the deterministic replay
 
 ## Licence
 

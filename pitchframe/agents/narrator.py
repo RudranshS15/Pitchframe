@@ -23,8 +23,7 @@ This module requires ``agent-framework``. The loop it plugs into does not.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import Any
+from collections.abc import Sequence
 
 import agent_framework as af
 
@@ -34,6 +33,7 @@ from ..claims import (
     ClaimError,
     Verdict,
     extract_json_payloads,
+    iter_claim_payloads,
     parse_claim,
 )
 from .pipeline import Assessment, Snapshot, render_snapshot
@@ -125,14 +125,13 @@ class NarratorAgent:
         """Read claims out of a reply, keeping whatever is usable.
 
         One malformed claim does not discard its well-formed siblings: a reply with
-        four good claims and one missing key should publish four.
+        four good claims and one missing key should publish four. Nor does a
+        container: fences, prose, envelope objects and nested arrays are all looked
+        through, so a correct claim is never rejected over how it was wrapped.
         """
         claims: list[Claim] = []
         for payload in extract_json_payloads(text):
-            items: Sequence[Any] = payload if isinstance(payload, list) else [payload]
-            for item in items:
-                if not isinstance(item, Mapping):
-                    continue
+            for item in iter_claim_payloads(payload):
                 try:
                     claims.append(parse_claim(item))
                 except ClaimError as exc:

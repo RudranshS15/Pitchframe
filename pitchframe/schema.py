@@ -30,6 +30,8 @@ __all__ = [
     "REGULATION_SECONDS",
     "PITCH_LENGTH",
     "PITCH_WIDTH",
+    "PITCH_LENGTH_METRES",
+    "PITCH_WIDTH_METRES",
 ]
 
 Team = Literal["home", "away"]
@@ -37,6 +39,10 @@ Team = Literal["home", "away"]
 EventType = Literal[
     "kickoff",
     "pass",
+    # A player keeping the ball and advancing with it, rather than releasing it. A
+    # first-class event so the build-up panel can draw a carry as a recorded route;
+    # `highlights` can still infer one from a gap, for streams that lack the event.
+    "carry",
     "shot",
     "tackle",
     "possession_change",
@@ -54,6 +60,19 @@ REGULATION_SECONDS = 90 * 60
 #: Normalised pitch extent; coordinates run 0-100 on both axes.
 PITCH_LENGTH = 100.0
 PITCH_WIDTH = 100.0
+
+#: The pitch the normalised grid stands for, in metres.
+#:
+#: The two axes are normalised onto the same 0-100 range but they do not represent the
+#: same distance: one unit along the length is 1.05 m and one across the width is
+#: 0.68 m. A distance measured in raw grid units therefore overstates any sideways
+#: component by about half again — which is what put a player level with the touchline
+#: twenty "units" from goal when they were twelve metres from it, and made the drawn
+#: finish on the build-up panel arrive somewhere the shot could not have gone. Anything
+#: that compares distances converts first; ``generator.goal_distance`` is the one that
+#: matters, because it decides where a side is close enough to shoot.
+PITCH_LENGTH_METRES = 105.0
+PITCH_WIDTH_METRES = 68.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +113,14 @@ class MatchEvent:
     Only the fields relevant to ``type`` are populated; the rest stay ``None``.
     ``clock`` is seconds since kick-off, which keeps ordering unambiguous and
     makes windowed statistics trivial to slice.
+
+    ``possession_id`` groups events into a single uninterrupted spell of the ball
+    for one side. It is additive, defaulted, and nothing that predates it depends on
+    it: every event built without one reads ``0``, which is a single anonymous
+    possession. It exists because a move is a *sequence*, and without a group
+    boundary "a nine-pass move" cannot be counted at all — the count would run
+    straight through a turnover. The generator assigns it; see
+    :mod:`pitchframe.highlights` for what it is used for.
     """
 
     id: str
@@ -108,6 +135,9 @@ class MatchEvent:
     speed_kmh: float | None = None
     pressure: float | None = None
     detail: str = ""
+    #: Which uninterrupted spell of possession this event belongs to. Events that
+    #: predate this field, or fixtures that do not care, all share ``0``.
+    possession_id: int = 0
 
     @property
     def minute(self) -> int:

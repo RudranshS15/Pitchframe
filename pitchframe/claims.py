@@ -18,6 +18,20 @@ retry — never to decide the outcome. A verifier whose verdict could be talked 
 of the truth would be worse than no verifier at all, because it would launder wrong
 claims as checked ones.
 
+**Reading model output is tolerant; deciding truth is not.** Everything above
+assumes a payload that already parses. Real replies arrive wrapped in code fences,
+followed by commentary, keyed with names the schema never mentioned, or nested
+inside an envelope object. Those are containers around a claim, not claims that are
+wrong, so :func:`extract_json_payloads` and :func:`iter_claim_payloads` look through
+the packaging and :func:`parse_claim` accepts a bounded allowlist of key spellings.
+
+The tolerance is deliberately narrow, and the line is worth stating because it is
+not arbitrary: packaging, key *spelling* and the case of the two-valued direction
+enum are forgiven, because none of them can change what was claimed. Value
+*synonyms* ("rising" for "up") and alternative value *shapes* for the window pair
+are not, because accepting those means inferring an intent the model did not
+express — and inferring intent is the failure this module exists to prevent.
+
 This module is standard library only, and deliberately usable without
 ``agent-framework`` installed: these are domain rules, not model orchestration. A
 rule that only runs when a model is present is a rule nobody can test.
@@ -26,7 +40,7 @@ rule that only runs when a model is present is a rule nobody can test.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -43,6 +57,7 @@ __all__ = [
     "Verdict",
     "baseline_window_for",
     "extract_json_payloads",
+    "iter_claim_payloads",
     "parse_claim",
     "summarise",
     "validate_claim",
@@ -204,14 +219,98 @@ class Verdict:
 
 # --- reading model output ----------------------------------------------------
 
+#: Key spellings models actually use, mapped onto the canonical field name.
+#: Keys are normalised first (case, underscores and hyphens dropped), so
+#: ``metric_name``, ``metricName`` and ``Metric Name`` all arrive as
+#: ``metricname``. This is an allowlist rather than fuzzy matching on purpose: a
+#: parser that guessed at an unfamiliar key would eventually accept a claim whose
+#: meaning it inferred instead of read.
+_FIELD_ALIASES: dict[str, str] = {
+    "claimid": "claim_id",
+    "id": "claim_id",
+    "metric": "metric",
+    "metricname": "metric",
+    "stat": "metric",
+    "team": "team",
+    "side": "team",
+    "window": "window",
+    "period": "window",
+    "span": "window",
+    "interval": "window",
+    "timerange": "window",
+    "windowseconds": "window",
+    "direction": "direction",
+    "trend": "direction",
+    "movement": "direction",
+    "magnitude": "magnitude",
+    "amount": "magnitude",
+    "delta": "magnitude",
+    "change": "magnitude",
+    "text": "text",
+    "sentence": "text",
+    "narrative": "text",
+    "description": "text",
+    "summary": "text",
+}
 
-def _require(payload: Mapping[str, Any], key: str) -> Any:
-    if key not in payload:
-        raise ClaimError(f"claim is missing required key {key!r}")
-    return payload[key]
+#: The canonical spellings, which take precedence over every alias.
+_CANONICAL_FIELDS = frozenset(_FIELD_ALIASES.values())
+
+#: Keys a model uses when it wraps its claims in an envelope object.
+_ENVELOPE_KEYS = frozenset(
+    {
+        "claims",
+        "claim",
+        "claimlist",
+        "results",
+        "result",
+        "items",
+        "item",
+        "entries",
+        "data",
+        "output",
+        "payload",
+        "list",
+    }
+)
+
+
+def _normalise_key(key: object) -> str:
+    """Fold a key to its comparable form: lowercase, no separators."""
+    return str(key).strip().lower().replace("_", "").replace("-", "").replace(" ", "")
+
+
+def _resolve_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Map a payload's own key spellings onto the canonical field names.
+
+    Canonical spellings win over aliases regardless of the order they appear in, so
+    a payload carrying both ``metric`` and ``metric_name`` is read the way the
+    schema says to read it.
+    """
+    resolved: dict[str, Any] = {
+        key: value for key, value in payload.items() if key in _CANONICAL_FIELDS
+    }
+    for key, value in payload.items():
+        canonical = _FIELD_ALIASES.get(_normalise_key(key))
+        if canonical is not None:
+            resolved.setdefault(canonical, value)
+    return resolved
+
+
+def _looks_like_claim(payload: Mapping[str, Any]) -> bool:
+    """Whether a mapping already carries the two fields no envelope would have."""
+    fields = {_FIELD_ALIASES.get(_normalise_key(key)) for key in payload}
+    return "metric" in fields and "direction" in fields
 
 
 def _parse_window(raw: Any) -> Window:
+    if isinstance(raw, Mapping):
+        # {"start": 60, "end": 120} — the same pair, spelled out.
+        normalised = {_normalise_key(key): value for key, value in raw.items()}
+        for start_key, end_key in (("start", "end"), ("from", "to"), ("begin", "finish")):
+            if start_key in normalised and end_key in normalised:
+                raw = [normalised[start_key], normalised[end_key]]
+                break
     if isinstance(raw, (list, tuple)) and len(raw) == 2:
         try:
             start, end = int(raw[0]), int(raw[1])
@@ -233,6 +332,11 @@ def extract_json_payloads(text: str) -> tuple[Any, ...]:
     Malformed spans are skipped rather than raised: a reply carrying one good claim
     and one broken one should still yield the good one, and the broken one will be
     caught by :func:`parse_claim` where the error can be attributed to a claim.
+
+    An opener that never closes — a stray ``{`` in "I could not use {window 60s" —
+    costs only that opener. The scan resumes one character later instead of
+    abandoning the reply, because the well-formed JSON frequently comes *after* the
+    prose that broke.
 
     Returns the decoded payloads in the order they appear.
     """
@@ -271,8 +375,10 @@ def extract_json_payloads(text: str) -> tuple[Any, ...]:
             cursor += 1
 
         if depth != 0:
-            # Unbalanced from here to the end; nothing further can parse.
-            break
+            # This opener never closes. Step past it and keep looking: giving up
+            # here would discard valid JSON that merely follows some prose.
+            index = start + 1
+            continue
 
         try:
             payloads.append(json.loads(text[start : cursor + 1]))
@@ -283,6 +389,42 @@ def extract_json_payloads(text: str) -> tuple[Any, ...]:
     return tuple(payloads)
 
 
+def iter_claim_payloads(payload: Any) -> Iterator[Mapping[str, Any]]:
+    """Walk a decoded payload and yield every claim-shaped mapping inside it.
+
+    Models emit claims in whatever envelope their training data suggested: a bare
+    array, an array nested one level deeper, or an object like ``{"claims": [...]}``.
+    All three mean the same thing, so the shape of the container is treated as
+    packaging to look through rather than a protocol error to report.
+
+    A mapping that is neither claim-shaped nor a recognisable envelope is still
+    yielded, so :func:`parse_claim` can raise its precise "missing required key"
+    message naming the keys it did receive. Swallowing it here would turn a
+    diagnosable protocol failure into silence, which is the opposite of useful when
+    the retry prompt is built from that message.
+    """
+    if isinstance(payload, (list, tuple)):
+        for item in payload:
+            yield from iter_claim_payloads(item)
+        return
+
+    if not isinstance(payload, Mapping):
+        return
+
+    if not _looks_like_claim(payload):
+        envelopes = [
+            value
+            for key, value in payload.items()
+            if _normalise_key(key) in _ENVELOPE_KEYS
+        ]
+        if envelopes:
+            for value in envelopes:
+                yield from iter_claim_payloads(value)
+            return
+
+    yield payload
+
+
 def parse_claim(payload: Mapping[str, Any]) -> Claim:
     """Build a :class:`Claim` from decoded JSON, rejecting anything malformed.
 
@@ -291,38 +433,59 @@ def parse_claim(payload: Mapping[str, Any]) -> Claim:
     distinct is what lets the retry prompt say whether the model misspoke or was
     simply wrong.
 
+    Field names are resolved through :data:`_FIELD_ALIASES` before anything is
+    required, so a claim that says ``metric_name`` and ``trend`` is read as the
+    claim it is. Missing fields are reported with the keys that were actually
+    present, since that message is what the model is retried with.
+
     Raises:
         ClaimError: if the payload is not a well-formed claim.
     """
     if not isinstance(payload, Mapping):
         raise ClaimError(f"claim must be an object, got {type(payload).__name__}")
 
-    team = payload.get("team")
-    if team is not None and team not in ("home", "away"):
-        raise ClaimError(f"team must be 'home', 'away' or null, got {team!r}")
+    fields = _resolve_fields(payload)
+    received = ", ".join(sorted(str(key) for key in payload)) or "nothing"
 
-    direction = _require(payload, "direction")
-    if direction not in ("up", "down"):
-        raise ClaimError(f"direction must be 'up' or 'down', got {direction!r}")
+    def required(name: str) -> Any:
+        if name not in fields:
+            raise ClaimError(
+                f"claim is missing required key {name!r}; "
+                f"the keys it did have were: {received}"
+            )
+        return fields[name]
 
-    raw_magnitude = payload.get("magnitude", 0.0)
+    team: Team | None = None
+    raw_team = fields.get("team")
+    if raw_team is not None:
+        if not isinstance(raw_team, str) or raw_team.strip().lower() not in ("home", "away"):
+            raise ClaimError(f"team must be 'home', 'away' or null, got {raw_team!r}")
+        team = "home" if raw_team.strip().lower() == "home" else "away"
+
+    raw_direction = required("direction")
+    # Case is spelling, not meaning: "Up" and "up" assert the same thing.
+    if not isinstance(raw_direction, str) or raw_direction.strip().lower() not in ("up", "down"):
+        raise ClaimError(f"direction must be 'up' or 'down', got {raw_direction!r}")
+    direction: Direction = "up" if raw_direction.strip().lower() == "up" else "down"
+
+    raw_magnitude = fields.get("magnitude", 0.0)
     try:
         magnitude = float(raw_magnitude)
     except (TypeError, ValueError) as exc:
         raise ClaimError(f"magnitude {raw_magnitude!r} is not a number") from exc
 
-    claim_id = str(_require(payload, "claim_id")).strip()
+    claim_id = str(required("claim_id")).strip()
     if not claim_id:
         raise ClaimError("claim_id must not be empty")
 
     return Claim(
         claim_id=claim_id,
-        metric=str(_require(payload, "metric")).strip(),
+        metric=str(required("metric")).strip(),
         team=team,
-        window=_parse_window(_require(payload, "window")),
+        window=_parse_window(required("window")),
         direction=direction,
         magnitude=magnitude,
-        text=str(payload.get("text", "")).strip(),
+        text=str(fields.get("text", "")).strip(),
     )
 
 
@@ -483,6 +646,10 @@ def verify_claim(
             f"({baseline_value:.4f} -> {measured_value:.4f}) as claimed"
         ),
         claimed_direction=claim.direction,
+        # Carried on a verified verdict too, not only on a rejection: the overlay's
+        # receipt reads "claimed ... · measured ..." and a passing claim is exactly
+        # the case where the two sides agreeing is worth showing.
+        claimed_magnitude=claim.magnitude,
         measured_direction=measured_direction,
         measured_value=measured_value,
         baseline_value=baseline_value,

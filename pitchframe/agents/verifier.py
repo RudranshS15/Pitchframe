@@ -111,11 +111,19 @@ class VerifierAgent:
         )
 
     def _read(self, text: str) -> tuple[str, str]:
-        """Pull ``explanation`` and ``hint`` out of the reply, tolerantly."""
+        """Pull ``explanation`` and ``hint`` out of the reply, tolerantly.
+
+        The reply may be a bare object, or an array wrapping one — a model asked for
+        a single object frequently returns a one-element list anyway. Both are the
+        same answer, so both are read; anything else falls back to the prose.
+        """
         for payload in extract_json_payloads(text):
-            if isinstance(payload, dict):
-                explanation = str(payload.get("explanation", "")).strip()
-                hint = str(payload.get("hint", "")).strip()
+            candidates = payload if isinstance(payload, list) else [payload]
+            for candidate in candidates:
+                if not isinstance(candidate, dict):
+                    continue
+                explanation = str(candidate.get("explanation", "")).strip()
+                hint = str(candidate.get("hint", "")).strip()
                 if explanation or hint:
                     return explanation, hint
         # Unreadable, but not useless: the prose still beats an empty explanation.

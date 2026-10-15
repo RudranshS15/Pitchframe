@@ -21,8 +21,9 @@ import sys
 import unittest
 from pathlib import Path
 
+from pitchframe.__main__ import key_moments
 from pitchframe.agents.demo import InjectingNarrator, RuleVerifier
-from pitchframe.agents.pipeline import run_pipeline, snapshot
+from pitchframe.agents.pipeline import MetricReading, Snapshot, run_pipeline, snapshot
 from pitchframe.claims import verify_claim
 from pitchframe.generator import generate_match
 from pitchframe.schema import MatchEvent, Player
@@ -68,6 +69,85 @@ class TestFaultInjection(unittest.TestCase):
         self.assertEqual(narrator.injected, set())
         self.assertEqual(result.summary()["rejected"], 0)
 
+
+class TestWhichClaimGetsInverted(unittest.TestCase):
+    """The target, when a caller has one.
+
+    Asserted against a controlled snapshot rather than a generated match. The planted
+    metric used to be "whatever moved most in this window", so a test that wanted one
+    particular metric had to hope for it — and broke the day the generator's stream
+    changed shape, having asserted nothing about the narrator at all.
+    """
+
+    def _snapshot(self, *readings: MetricReading) -> Snapshot:
+        return Snapshot(window=(100, 200), baseline=(0, 100), readings=tuple(readings))
+
+    @staticmethod
+    def _reading(metric: str, *, moved: float, from_: float) -> MetricReading:
+        """A reading whose relative movement ranks as ``moved`` against ``from_``."""
+        return MetricReading(metric, None, value=from_ + moved, baseline_value=from_)
+
+    def _propose(self, narrator: InjectingNarrator, snap: Snapshot):
+        return asyncio.run(narrator.propose(snap))
+
+    def test_the_strongest_reading_is_the_default_target(self) -> None:
+        snap = self._snapshot(
+            self._reading("momentum", moved=80.0, from_=10.0),
+            self._reading("chaos_index", moved=0.3, from_=0.5),
+        )
+        narrator = InjectingNarrator(fault="narrator-invert")
+        claims = self._propose(narrator, snap)
+        self.assertEqual(narrator.injected, {"momentum"})
+        self.assertEqual(
+            {c.metric: c.direction for c in claims},
+            {"momentum": "down", "chaos_index": "up"},
+        )
+
+    def test_a_pinned_target_wins_over_strength(self) -> None:
+        """Asking for a metric has to produce that metric, not whichever happened to
+        move most — otherwise the caller's request is a suggestion."""
+        snap = self._snapshot(
+            self._reading("momentum", moved=80.0, from_=10.0),
+            self._reading("chaos_index", moved=0.3, from_=0.5),
+        )
+        narrator = InjectingNarrator(fault="narrator-invert", target="chaos_index")
+        claims = self._propose(narrator, snap)
+        self.assertEqual(narrator.injected, {"chaos_index"})
+        self.assertEqual(
+            {c.metric: c.direction for c in claims},
+            # The weaker one flipped; the strongest was left alone.
+            {"momentum": "up", "chaos_index": "down"},
+        )
+
+    def test_a_pinned_target_displaces_the_weakest_claim_when_it_would_not_be_made(self) -> None:
+        """Otherwise a request for a metric outside the strongest few plants nothing
+        at all, while the demo reports a planted fault anyway."""
+        readings = [
+            self._reading(f"metric_{index}", moved=100.0 - index, from_=10.0)
+            for index in range(4)
+        ]
+        readings.append(self._reading("chaos_index", moved=0.3, from_=0.5))
+        narrator = InjectingNarrator(fault="narrator-invert", target="chaos_index")
+        claims = self._propose(narrator, self._snapshot(*readings))
+
+        self.assertEqual(len(claims), narrator.max_claims, "the line count must not grow")
+        self.assertEqual(narrator.injected, {"chaos_index"})
+        metrics = {c.metric for c in claims}
+        self.assertIn("chaos_index", metrics)
+        # The weakest of the four strongest gave up its place to it.
+        self.assertEqual(metrics, {"metric_0", "metric_1", "metric_2", "chaos_index"})
+
+    def test_a_flat_metric_is_never_inverted_even_when_pinned(self) -> None:
+        """A reading that did not move has no direction to invert."""
+        snap = self._snapshot(
+            self._reading("momentum", moved=80.0, from_=10.0),
+            self._reading("chaos_index", moved=0.0, from_=0.5),
+        )
+        narrator = InjectingNarrator(fault="narrator-invert", target="chaos_index")
+        claims = self._propose(narrator, snap)
+        self.assertEqual(narrator.injected, set())
+        self.assertEqual({c.metric: c.direction for c in claims}, {"momentum": "up"})
+
     def test_injecting_a_fault_produces_exactly_one_rejection(self) -> None:
         _, _, result = run_demo()
         self.assertEqual(result.summary()["rejected"], 1)
@@ -100,6 +180,49 @@ class TestFaultInjection(unittest.TestCase):
         narrator, _, result = run_demo(events=flat)
         for claim in result.claims:
             self.assertNotEqual(claim.metric, "chaos_index")
+
+
+class TestKeyMoments(unittest.TestCase):
+    """The report's "key moments" list, and the order it is in.
+
+    This ranking is what decides whether a match summary looks right at a glance. It
+    used to multiply the event's weight by its own pressure, so a tap-in scored at
+    0.2 pressure ranked below a shot saved at 0.83 — and a decided match could print
+    five shots and no goal.
+    """
+
+    @staticmethod
+    def _event(kind: str, clock: int, pressure: float) -> MatchEvent:
+        player = _HOME if kind == "goal" else _AWAY
+        return MatchEvent(
+            f"{kind}{clock}", "T", clock, kind, player.team, player,
+            outcome="success", pressure=pressure,
+        )
+
+    def test_a_goal_outranks_a_shot_whatever_the_pressure(self) -> None:
+        events = (self._event("goal", 100, 0.20), self._event("shot", 110, 0.83))
+        self.assertEqual(key_moments(events, 2)[0].type, "goal")
+
+    def test_pressure_still_orders_events_within_a_class(self) -> None:
+        events = (self._event("shot", 110, 0.40), self._event("shot", 120, 0.80))
+        self.assertEqual([e.clock for e in key_moments(events, 2)], [120, 110])
+
+    def test_a_match_never_loses_its_goals_to_the_limit(self) -> None:
+        """Checked on generated matches, where it was actually going wrong."""
+        for seed in (7, 12, 42, 99):
+            with self.subTest(seed=seed):
+                events = generate_match(seed).events
+                goals = sum(1 for e in events if e.type == "goal")
+                moments = key_moments(events, 5)
+                self.assertEqual(
+                    sum(1 for e in moments if e.type == "goal"),
+                    min(goals, 5),
+                    "every goal should appear ahead of any non-goal",
+                )
+
+    def test_ties_fall_back_to_clock_order(self) -> None:
+        events = (self._event("shot", 120, 0.5), self._event("shot", 110, 0.5))
+        self.assertEqual([e.clock for e in key_moments(events, 2)], [110, 120])
 
 
 class TestRevisionPolicy(unittest.TestCase):

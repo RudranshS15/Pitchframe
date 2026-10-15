@@ -21,6 +21,7 @@ from pitchframe.claims import (
     ClaimError,
     baseline_window_for,
     extract_json_payloads,
+    iter_claim_payloads,
     parse_claim,
     summarise,
     validate_claim,
@@ -121,6 +122,232 @@ class TestExtractJson(unittest.TestCase):
 
     def test_no_json_at_all(self) -> None:
         self.assertEqual(extract_json_payloads("I cannot help with that."), ())
+
+    def test_unbalanced_brace_in_prose_does_not_discard_later_json(self) -> None:
+        """Real prose carries stray braces; one must not cost the whole reply."""
+        text = 'I could not use {window 60-90 because of the restart\n[{"a": 1}]'
+        self.assertEqual(extract_json_payloads(text), ([{"a": 1}],))
+
+    def test_unbalanced_bracket_in_prose_does_not_discard_later_json(self) -> None:
+        text = 'Notes on the period [see below\n[{"a": 1}]'
+        self.assertEqual(extract_json_payloads(text), ([{"a": 1}],))
+
+    def test_unbalanced_opener_after_valid_json_keeps_the_valid_payload(self) -> None:
+        text = '[{"a": 1}] and then, for what it is worth {unclosed'
+        self.assertEqual(extract_json_payloads(text), ([{"a": 1}],))
+
+    def test_recovery_from_a_stray_opener_still_finds_every_later_payload(self) -> None:
+        text = 'bad { brace\n{"n": 1} and {"n": 2}'
+        self.assertEqual(extract_json_payloads(text), ({"n": 1}, {"n": 2}))
+
+
+class TestIterClaimPayloads(unittest.TestCase):
+    """The containers a model wraps its claims in. All of them mean "a list"."""
+
+    def _claim(self, **overrides: object) -> dict[str, object]:
+        base: dict[str, object] = {
+            "claim_id": "C1",
+            "metric": "momentum",
+            "team": None,
+            "window": [100, 200],
+            "direction": "up",
+            "magnitude": 3.0,
+            "text": "t",
+        }
+        base.update(overrides)
+        return base
+
+    def test_flat_object_is_yielded_unchanged(self) -> None:
+        payload = self._claim()
+        self.assertEqual(list(iter_claim_payloads(payload)), [payload])
+
+    def test_bare_array_is_flattened(self) -> None:
+        claims = [self._claim(claim_id="C1"), self._claim(claim_id="C2")]
+        self.assertEqual(list(iter_claim_payloads(claims)), claims)
+
+    def test_doubly_nested_array_is_flattened(self) -> None:
+        claim = self._claim()
+        self.assertEqual(list(iter_claim_payloads([[claim]])), [claim])
+
+    def test_named_envelope_is_unwrapped(self) -> None:
+        claim = self._claim()
+        self.assertEqual(list(iter_claim_payloads({"claims": [claim]})), [claim])
+
+    def test_singular_envelope_is_unwrapped(self) -> None:
+        claim = self._claim()
+        self.assertEqual(list(iter_claim_payloads({"claim": claim})), [claim])
+
+    def test_stacked_envelopes_are_unwrapped(self) -> None:
+        claim = self._claim()
+        self.assertEqual(list(iter_claim_payloads({"data": {"claims": [claim]}})), [claim])
+
+    def test_scalars_mixed_into_an_array_are_skipped(self) -> None:
+        claim = self._claim()
+        self.assertEqual(list(iter_claim_payloads([None, 1, "text", claim])), [claim])
+
+    def test_unrecognised_object_is_yielded_so_the_error_can_be_precise(self) -> None:
+        """Swallowing it here would turn a diagnosable failure into silence."""
+        payload = {"metric": "momentum"}  # no direction, no envelope key
+        self.assertEqual(list(iter_claim_payloads(payload)), [payload])
+
+    def test_an_envelope_key_inside_a_real_claim_does_not_double_yield(self) -> None:
+        claim = self._claim(results=[{"claim_id": "nested"}])
+        self.assertEqual(list(iter_claim_payloads(claim)), [claim])
+
+    def test_a_scalar_payload_yields_nothing(self) -> None:
+        self.assertEqual(list(iter_claim_payloads("no claims here")), [])
+
+
+class TestFieldSpellings(unittest.TestCase):
+    """Names and spellings a model reaches for when it drifts off the schema."""
+
+    def _payload(self, **overrides: object) -> dict[str, object]:
+        base: dict[str, object] = {
+            "claim_id": "C1",
+            "metric": "momentum",
+            "team": None,
+            "window": [100, 200],
+            "direction": "up",
+            "magnitude": 3.0,
+            "text": "t",
+        }
+        base.update(overrides)
+        return base
+
+    def test_alias_spellings_are_read_as_the_fields_they_mean(self) -> None:
+        claim = parse_claim(
+            {
+                "id": "C1",
+                "metric_name": "momentum",
+                "side": "home",
+                "period": [100, 200],
+                "trend": "up",
+                "amount": 3.0,
+                "narrative": "home on top",
+            }
+        )
+        self.assertEqual(claim.claim_id, "C1")
+        self.assertEqual(claim.metric, "momentum")
+        self.assertEqual(claim.team, "home")
+        self.assertEqual(claim.window, (100, 200))
+        self.assertEqual(claim.direction, "up")
+        self.assertEqual(claim.magnitude, 3.0)
+        self.assertEqual(claim.text, "home on top")
+
+    def test_camel_case_spellings_are_read(self) -> None:
+        claim = parse_claim(
+            {
+                "claimId": "C1",
+                "metricName": "momentum",
+                "windowSeconds": [100, 200],
+                "direction": "up",
+            }
+        )
+        self.assertEqual(claim.claim_id, "C1")
+        self.assertEqual(claim.window, (100, 200))
+
+    def test_the_canonical_spelling_wins_over_an_alias(self) -> None:
+        """A payload carrying both must be read the way the schema says."""
+        claim = parse_claim(self._payload(id="OTHER", metric_name="chaos_index"))
+        self.assertEqual(claim.claim_id, "C1")
+        self.assertEqual(claim.metric, "momentum")
+
+    def test_unknown_key_names_report_the_keys_that_arrived(self) -> None:
+        """That message is what the model is retried with, so it must be specific."""
+        with self.assertRaises(ClaimError) as caught:
+            parse_claim({"label": "C1", "score": "momentum", "when": [100, 200], "way": "up"})
+        message = str(caught.exception)
+        self.assertIn("missing required key", message)
+        self.assertIn("label", message)
+
+    def test_an_unlisted_key_is_not_guessed_at(self) -> None:
+        """Tolerance covers spelling, not inference."""
+        payload = self._payload()
+        del payload["direction"]
+        payload["vibe"] = "up"
+        with self.assertRaises(ClaimError):
+            parse_claim(payload)
+
+    def test_extra_keys_are_ignored_rather_than_fatal(self) -> None:
+        """Models volunteer confidence and reasoning; that is not malformation."""
+        claim = parse_claim(self._payload(confidence=0.9, reasoning="they pressed high"))
+        self.assertEqual(claim.claim_id, "C1")
+
+    def test_direction_case_is_spelling_not_meaning(self) -> None:
+        self.assertEqual(parse_claim(self._payload(direction="DOWN")).direction, "down")
+
+    def test_a_synonym_for_direction_is_still_rejected(self) -> None:
+        """'rising' is an interpretation of 'up', and this parser does not guess."""
+        with self.assertRaises(ClaimError):
+            parse_claim(self._payload(direction="rising"))
+
+    def test_team_case_is_spelling(self) -> None:
+        self.assertEqual(parse_claim(self._payload(team="HOME")).team, "home")
+
+    def test_window_spelled_as_start_and_end_parses(self) -> None:
+        claim = parse_claim(self._payload(window={"start": 100, "end": 200}))
+        self.assertEqual(claim.window, (100, 200))
+
+    def test_reversed_bounds_in_a_window_object_are_still_rejected(self) -> None:
+        with self.assertRaises(ClaimError):
+            parse_claim(self._payload(window={"start": 200, "end": 100}))
+
+
+class TestRealisticReply(unittest.TestCase):
+    """One reply carrying every shape at once, the way a real model produces them."""
+
+    REPLY = """\
+Quick notes first: I skipped {window 200-300 because it has not closed yet.
+
+```json
+{
+  "claims": [
+    {
+      "claimId": "C1",
+      "metric_name": "momentum",
+      "period": {"start": 100, "end": 200},
+      "trend": "down",
+      "amount": 3.0,
+      "sentence": "Momentum swung away from the home side."
+    },
+    {
+      "id": "C2",
+      "metric": "momentum",
+      "window": [100, 200],
+      "direction": "up",
+      "magnitude": 3.0,
+      "text": "Momentum swung their way."
+    }
+  ]
+}
+```
+
+Let me know if you want the rest of the windows.
+"""
+
+    def _parse_reply(self, text: str) -> list[Claim]:
+        return [
+            parse_claim(item)
+            for payload in extract_json_payloads(text)
+            for item in iter_claim_payloads(payload)
+        ]
+
+    def test_every_shape_at_once_still_yields_both_claims(self) -> None:
+        claims = self._parse_reply(self.REPLY)
+        self.assertEqual([c.claim_id for c in claims], ["C1", "C2"])
+
+    def test_aliased_fields_arrive_as_the_fields_they_mean(self) -> None:
+        first, _ = self._parse_reply(self.REPLY)
+        self.assertEqual(first.metric, "momentum")
+        self.assertEqual(first.window, (100, 200))
+        self.assertEqual(first.direction, "down")
+        self.assertEqual(first.text, "Momentum swung away from the home side.")
+
+    def test_a_realistic_reply_reaches_verification_intact(self) -> None:
+        """The point of the tolerance: nothing is lost on the way to the arithmetic."""
+        verdicts = [verify_claim(c, _MOMENTUM_FALLS) for c in self._parse_reply(self.REPLY)]
+        self.assertEqual([v.status for v in verdicts], ["verified", "rejected"])
+        self.assertEqual(verdicts[1].measured_direction, "down")
 
 
 class TestParseClaim(unittest.TestCase):

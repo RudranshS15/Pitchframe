@@ -80,6 +80,23 @@ class TestNarratorReadsModelOutput(unittest.TestCase):
         snap = snapshot(EVENTS, WINDOW, BASELINE)
         return asyncio.run(narrator.propose(snap))
 
+    def _propose_clean(self, reply: str) -> list:
+        """Propose from one reply, asserting the schema-restating retry was not needed.
+
+        This is what makes the tolerance tests below real. ``propose`` retries an
+        unreadable reply once, so a reply the parser cannot handle would still come
+        back as claims via the retry — and the test would pass while the parsing it
+        claims to exercise did nothing. Asserting one call and no parse errors pins
+        the result to the first read.
+        """
+        narrator = build_narrator(reply, "SENTINEL: the retry should not have happened")
+        from pitchframe.agents.pipeline import snapshot
+
+        claims = asyncio.run(narrator.propose(snapshot(EVENTS, WINDOW, BASELINE)))
+        self.assertEqual(narrator.parse_errors, [])
+        self.assertEqual(narrator.calls, 1)
+        return list(claims)
+
     def test_reads_a_fenced_json_array(self) -> None:
         claims = self._propose(INVERTED)
         self.assertEqual([c.claim_id for c in claims], ["C1"])
@@ -119,6 +136,38 @@ class TestNarratorReadsModelOutput(unittest.TestCase):
         asyncio.run(narrator.propose(snapshot(EVENTS, WINDOW, BASELINE)))
         self.assertTrue(narrator.parse_errors)
 
+    def test_reads_an_envelope_object(self) -> None:
+        reply = (
+            '{"claims": [{"claim_id": "E1", "metric": "momentum", "team": null, '
+            '"window": [100, 200], "direction": "down", "magnitude": 3.0}]}'
+        )
+        self.assertEqual([c.claim_id for c in self._propose_clean(reply)], ["E1"])
+
+    def test_reads_a_doubly_nested_array(self) -> None:
+        reply = (
+            '[[{"claim_id": "N1", "metric": "momentum", "team": null, '
+            '"window": [100, 200], "direction": "down", "magnitude": 3.0}]]'
+        )
+        self.assertEqual([c.claim_id for c in self._propose_clean(reply)], ["N1"])
+
+    def test_reads_aliased_field_names(self) -> None:
+        reply = (
+            '{"claimId": "A1", "metric_name": "momentum", '
+            '"period": {"start": 100, "end": 200}, "trend": "down", "amount": 3.0}'
+        )
+        claims = self._propose_clean(reply)
+        self.assertEqual([c.claim_id for c in claims], ["A1"])
+        self.assertEqual(claims[0].direction, "down")
+        self.assertEqual(claims[0].window, (100, 200))
+
+    def test_a_stray_brace_in_prose_does_not_hide_the_json(self) -> None:
+        reply = (
+            "I skipped {window 200-300 as it has not closed yet.\n"
+            '```json\n[{"claim_id": "S1", "metric": "momentum", "team": null, '
+            '"window": [100, 200], "direction": "down", "magnitude": 3.0}]\n```'
+        )
+        self.assertEqual([c.claim_id for c in self._propose_clean(reply)], ["S1"])
+
 
 @requires_framework
 class TestVerifierExplains(unittest.TestCase):
@@ -145,6 +194,21 @@ class TestVerifierExplains(unittest.TestCase):
         verdict = verify_claim(claim, EVENTS)
         assessment = asyncio.run(build_verifier("uh, I guess so?").assess(claim, verdict))
         self.assertTrue(assessment.explanation)
+
+    def test_reads_an_assessment_wrapped_in_a_list(self) -> None:
+        """A model asked for one object very often returns a one-element array."""
+        from pitchframe.claims import verify_claim
+
+        claim = build_narrator(INVERTED)._parse(INVERTED)[0]
+        verdict = verify_claim(claim, EVENTS)
+        wrapped = '[{"explanation": "momentum fell, so it moved down.", "hint": "say down"}]'
+        verifier = build_verifier(wrapped)
+        assessment = asyncio.run(verifier.assess(claim, verdict))
+        self.assertIn("momentum fell", assessment.explanation)
+        self.assertEqual(assessment.hint, "say down")
+        # Without the unwrapping this would report 'reply was not JSON' and fall
+        # back to the raw prose, which contains the same words but no hint.
+        self.assertEqual(verifier.parse_errors, [])
 
     def test_verifier_outage_falls_back_to_the_rejection_reason(self) -> None:
         """A dead verifier degrades the explanation, never the verdict."""
@@ -199,6 +263,33 @@ class TestFullPipelineOffline(unittest.TestCase):
         self.assertFalse(verdict.is_verified)
         self.assertEqual(verdict.claimed_direction, "up")
         self.assertEqual(verdict.measured_direction, "down")
+
+    def test_a_fully_wrapped_reply_still_reaches_the_verdict(self) -> None:
+        """Fenced, enveloped, aliased and trailed by prose: the loop still rules."""
+        wrapped = """\
+Notes first: I skipped {window 200-300 as it has not closed yet.
+
+```json
+{"claims": [{"claimId": "W1", "metric_name": "momentum",
+             "period": {"start": 100, "end": 200}, "trend": "up",
+             "amount": 3.0, "sentence": "Momentum swung their way."}]}
+```
+
+Anything else?
+"""
+        result = asyncio.run(
+            run_pipeline(
+                build_narrator(wrapped, CORRECTED),
+                build_verifier(ASSESSMENT),
+                EVENTS,
+                WINDOW,
+                BASELINE,
+            )
+        )
+        self.assertEqual(result.verdicts[0].claim_id, "W1")
+        self.assertFalse(result.verdicts[0].is_verified)
+        self.assertEqual(result.summary()["corrections"], 1)
+        self.assertEqual([c.claim_id for c in result.verified], ["C1r"])
 
 
 if __name__ == "__main__":

@@ -36,11 +36,22 @@ _NOTABLE_WEIGHTS = {"goal": 3.0, "shot": 2.0, "tackle": 1.0}
 def key_moments(events: Sequence[MatchEvent], limit: int) -> list[MatchEvent]:
     """Rank the most consequential events.
 
-    Weighted by event type and scaled by pressure, so a high-pressure shot
-    outranks a routine one. Ties fall back to clock order for stability.
+    A goal outranks everything else, whatever its pressure. It used to be weighted by
+    type *and* scaled by pressure, which put a low-pressure tap-in below a
+    high-pressure shot that was saved: a decided match could print a key-moments list
+    with no goal in it at all, which reads as a fault in the report rather than as a
+    quiet goal. Pressure still orders events *within* a class, so a high-pressure shot
+    still outranks a routine one. Ties fall back to clock order for stability.
     """
     notable = [e for e in events if e.type in _NOTABLE_WEIGHTS]
-    notable.sort(key=lambda e: (_NOTABLE_WEIGHTS[e.type] * (e.pressure or 0.0), -e.clock), reverse=True)
+    notable.sort(
+        key=lambda e: (
+            _NOTABLE_WEIGHTS[e.type],
+            _NOTABLE_WEIGHTS[e.type] * (e.pressure or 0.0),
+            -e.clock,
+        ),
+        reverse=True,
+    )
     return notable[:limit]
 
 
@@ -218,6 +229,37 @@ def _run_claims(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_overlay(args: argparse.Namespace) -> int:
+    """Serve the live overlay.
+
+    The dependency check happens here rather than at import time so that every other
+    command keeps working on an interpreter with nothing installed. A missing
+    dependency is reported as a fixable instruction, not a traceback.
+    """
+    try:
+        import uvicorn
+    except ImportError:
+        print(
+            "error: the overlay needs fastapi and uvicorn.\n"
+            "  python -m pip install -r requirements.txt",
+            file=sys.stderr,
+        )
+        return 2
+
+    from .overlay.server import create_app
+
+    url = (
+        f"http://{args.host}:{args.port}/"
+        f"?seed={args.seed}&fault={args.inject_fault}"
+    )
+    print("Pitchframe overlay")
+    print(f"  {url}")
+    print(f"  fault={args.inject_fault}  (use fault=none in the URL for the honest baseline)")
+    print("  Ctrl+C to stop")
+    uvicorn.run(create_app(), host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m pitchframe",
@@ -248,6 +290,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         choices=["none", "narrator-invert"],
         help="fault to inject into the narrator (default: narrator-invert)",
     )
+    parser.add_argument(
+        "--overlay",
+        action="store_true",
+        help="serve the live overlay in a browser (needs fastapi and uvicorn)",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="interface for --overlay (default: 127.0.0.1, loopback only)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="port for --overlay (default: 8000)",
+    )
     args = parser.parse_args(argv)
 
     # Windows consoles are not reliably UTF-8. Downgrade unencodable glyphs
@@ -259,6 +317,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.providers:
         return _report_providers()
+
+    if args.overlay:
+        return _run_overlay(args)
 
     if args.claims:
         return _run_claims(args)

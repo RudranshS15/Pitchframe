@@ -252,6 +252,7 @@ async def run_pipeline(
     baseline: Window,
     *,
     max_corrections: int = 1,
+    closed_windows: Sequence[Window] | None = None,
 ) -> PipelineResult:
     """Propose claims for one window, check them, and retry the failures once.
 
@@ -263,6 +264,10 @@ async def run_pipeline(
         baseline: the window the claims are measured against.
         max_corrections: how many times a single claim may be sent back. One by
             default; raising it multiplies cost against a paid endpoint.
+        closed_windows: the windows the analyser has closed so far. Pass the ones
+            up to and including ``window`` to run the loop the way a live feed
+            does: only what has already happened may be claimed about. Defaults to
+            ``None``, which infers closure from the last event instead.
 
     Every attempt is verified with :func:`~pitchframe.claims.verify_claim`, including
     the corrected one. A revision is not trusted because it was a revision — it is
@@ -291,7 +296,7 @@ async def run_pipeline(
     record("narrator.proposed", f"{len(proposed)} claim(s)")
 
     for claim in proposed:
-        verdict = verify_claim(claim, events)
+        verdict = verify_claim(claim, events, closed_windows)
         result.claims.append(claim)
         result.verdicts.append(verdict)
         record("claim.verified" if verdict.is_verified else "claim.rejected",
@@ -325,7 +330,7 @@ async def run_pipeline(
                 break
 
             result.corrections += 1
-            revised_verdict = verify_claim(revised, events)
+            revised_verdict = verify_claim(revised, events, closed_windows)
             result.claims.append(revised)
             result.verdicts.append(revised_verdict)
             record(

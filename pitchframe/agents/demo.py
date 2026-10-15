@@ -43,7 +43,10 @@ class InjectingNarrator:
         fault: which fault to inject. ``narrator-invert`` flips the direction of one
             claim, which is the failure the Verifier exists to catch.
         max_claims: how many of the strongest readings to claim about.
-        target: which reading to invert, by key. Defaults to the strongest one.
+        target: which reading to invert, by key (``momentum``, or
+            ``possession_share@away`` for a side-scoped metric). Defaults to the
+            strongest one. A named reading is always claimed when it moved, so asking
+            for a particular fault always produces that fault.
     """
 
     fault: str = "narrator-invert"
@@ -55,33 +58,53 @@ class InjectingNarrator:
     #: Every proposal, so an evaluation run can compare proposed against published.
     proposed: list[Claim] = field(default_factory=list)
 
-    def _strongest(self, snap: Snapshot) -> list:
+    def _strongest(self, snap: Snapshot, *, pin: str | None = None) -> list:
         """Readings ranked by relative movement.
 
         Relative rather than absolute, because the metrics do not share a scale: a
         momentum delta of 10 and a possession delta of 0.3 say very different things
         about which is the bigger story, and comparing the raw numbers would pick
         whichever metric happens to have the largest units.
+
+        Args:
+            pin: a reading key that must be claimed if it moved at all. A caller can
+                ask for a specific fault — invert ``momentum`` in this window — and if
+                the pinned reading fell outside the strongest few, that request would
+                invert nothing, while the demo would still report a planted fault that
+                was never planted. Pinning it makes the request and the outcome the
+                same thing.
         """
         moved = [r for r in snap.readings if not r.is_flat]
         moved.sort(key=lambda r: abs(r.delta) / (abs(r.baseline_value) + 1e-6), reverse=True)
-        return moved[: self.max_claims]
+        picks = moved[: self.max_claims]
+        if pin is not None and moved:
+            pinned = next((r for r in moved if r.key == pin), None)
+            if pinned is not None and not any(r.key == pin for r in picks):
+                # Displace the weakest claim rather than adding a fifth, so the number
+                # of published lines per window is the caller's to control.
+                picks[-1] = pinned
+        return picks
 
     async def propose(self, snap: Snapshot) -> Sequence[Claim]:
-        picks = self._strongest(snap)
+        pinned = self.target if self.fault == "narrator-invert" else None
+        picks = self._strongest(snap, pin=pinned)
         if not picks:
             return []
 
         invert_key = None
-        if self.fault == "narrator-invert" and picks:
+        if self.fault == "narrator-invert":
             invert_key = self.target or picks[0].key
-            self.injected.add(invert_key)
 
         claims: list[Claim] = []
         for index, reading in enumerate(picks):
             direction = reading.direction
             if reading.key == invert_key:
                 direction = "down" if direction == "up" else "up"  # the injected fault
+                # Recorded here rather than up front. Recording the key before the
+                # claims were built meant a request to invert a reading that did not
+                # move left "planted fault" labels behind with no planted fault under
+                # them, which is the exact dishonesty the labelling exists to prevent.
+                self.injected.add(reading.key)
             claims.append(
                 Claim(
                     claim_id=f"W{snap.window[0]}-{index + 1}",

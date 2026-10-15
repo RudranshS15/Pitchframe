@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import unittest
 
-from pitchframe.generator import build_squads, generate_match
-from pitchframe.schema import REGULATION_SECONDS
+from pitchframe.generator import GOAL_HALF_WIDTH, build_squads, generate_match
+from pitchframe.schema import PITCH_LENGTH, REGULATION_SECONDS
 
 
 class DeterminismTests(unittest.TestCase):
@@ -130,6 +130,71 @@ class ShapeTests(unittest.TestCase):
             mean_shot,
             f"passes ({mean_pass:.1f} km/h) should be slower than shots ({mean_shot:.1f} km/h)",
         )
+
+
+class FinishGeometryTests(unittest.TestCase):
+    """Where a shot and a goal actually finish, since the panel draws it.
+
+    The build-up panel draws the finish as a line from the strike to the point the
+    ball ends up, and marks the goal with a ring at the goal event's own target. When
+    those two were independent random draws, a strike recorded as "on target" could
+    finish well outside the posts and the ring could sit somewhere else again, so the
+    picture showed the ball leaving one place and the goal appearing at another. The
+    geometry is asserted here rather than eyeballed, because "it looks wrong" is
+    exactly the report these numbers exist to make checkable.
+    """
+
+    SEEDS = (7, 11, 42)
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.events = [event for seed in cls.SEEDS for event in generate_match(seed).events]
+
+    def _mouth_offset(self, event) -> float:
+        """How far outside the goal's centre line a ball finished, in normalised units."""
+        assert event.to_xy is not None
+        return abs(event.to_xy[1] - PITCH_LENGTH / 2)
+
+    def test_every_goal_finishes_inside_the_posts(self) -> None:
+        goals = [e for e in self.events if e.type == "goal"]
+        self.assertGreater(len(goals), 5)
+        for goal in goals:
+            self.assertLessEqual(
+                self._mouth_offset(goal),
+                GOAL_HALF_WIDTH,
+                f"{goal.id}: goal at y={goal.to_xy[1]:.1f} is wide of the posts",
+            )
+
+    def test_a_goal_shares_the_finish_of_the_shot_that_scored_it(self) -> None:
+        """One kick, one account of it — the same target and the same ball speed."""
+        pairs = 0
+        for shot, goal in zip(self.events, self.events[1:]):
+            if shot.type != "shot" or goal.type != "goal" or goal.team != shot.team:
+                continue
+            self.assertEqual(goal.to_xy, shot.to_xy)
+            self.assertEqual(goal.speed_kmh, shot.speed_kmh)
+            pairs += 1
+        self.assertGreater(pairs, 5)
+
+    def test_on_target_and_off_target_agree_with_the_posts(self) -> None:
+        """``outcome`` is a claim about where the ball went, so it has to match it."""
+        on_target = [e for e in self.events if e.type == "shot" and e.outcome == "success"]
+        off_target = [e for e in self.events if e.type == "shot" and e.outcome == "fail"]
+        self.assertGreater(len(on_target), 5)
+        self.assertGreater(len(off_target), 5)
+
+        for shot in on_target:
+            self.assertLessEqual(
+                self._mouth_offset(shot),
+                GOAL_HALF_WIDTH,
+                f"{shot.id}: on-target shot finished at y={shot.to_xy[1]:.1f}",
+            )
+        for shot in off_target:
+            self.assertGreater(
+                self._mouth_offset(shot),
+                GOAL_HALF_WIDTH,
+                f"{shot.id}: off-target shot finished inside the posts at y={shot.to_xy[1]:.1f}",
+            )
 
 
 class TrademarkGuardTests(unittest.TestCase):
