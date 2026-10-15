@@ -1,0 +1,62 @@
+# Two jobs, because the project makes two different promises and each deserves its own
+# check.
+#
+#   core   runs on a bare interpreter with nothing installed. This is the promise the
+#          README opens with — no dependencies, no network, no credentials — so the job
+#          installs nothing at all: if a dependency ever creeps into the core, this is
+#          the job that fails rather than a reader discovering it.
+#   full   installs requirements.txt, which is what makes the overlay server and the
+#          real model tiers importable, and runs every test including the HTTP ones.
+#
+# Python is pinned to 3.13 for the same reason requirements.txt pins it: 3.14 does not
+# yet have wheels for the whole agent dependency chain. The core itself runs on both.
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core:
+    name: core (standard library only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # Deliberately no install step. A green run here means the core needs nothing.
+      - name: The report a reader sees first
+        run: python -m pitchframe --seed 7
+
+      - name: Which model tiers are usable
+        run: python -m pitchframe --providers
+
+      - name: The propose -> verify -> retry loop
+        run: python -m pitchframe --claims
+
+      # Without fastapi the server tests skip; that is the point of this job, and the
+      # full job below is where they must not skip.
+      - name: The suite
+        run: python -m unittest discover -s tests -t .
+
+  full:
+    name: full suite (requirements.txt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install
+        run: python -m pip install -r requirements.txt
+
+      - name: The suite
+        run: python -m unittest discover -s tests -t .
