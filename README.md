@@ -5,7 +5,7 @@ stream into explainable, personalised narratives.
 
 > **Status: working end to end.** The generator, the analytics engine, the claim
 > layer, the Narrator/Verifier loop, the live overlay and the goal build-up panel
-> are implemented and tested (363 tests). See [Roadmap](#roadmap) for what is still
+> are implemented and tested (386 tests). See [Roadmap](#roadmap) for what is still
 > open.
 
 ---
