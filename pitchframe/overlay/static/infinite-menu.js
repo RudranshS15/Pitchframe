@@ -389,6 +389,14 @@ export function createInfiniteMenu(container, options = {}) {
   /* The no-WebGL2 path. Same items, same order, same click behaviour, and the caller is
      told which of the two it got — see the module docstring. */
   function buildFallback() {
+    /* The canvas goes with the context that would have drawn on it. A canvas with no context
+       is invisible but it is not transparent to the pointer, it is absolutely positioned over
+       the whole stage, and it carries `cursor: grab` — so leaving it here would put an
+       unclickable sheet over the one thing this path exists to keep working. The list below
+       is appended after it and painted under it, which is why this is a removal rather than a
+       `pointer-events: none`. */
+    dom.canvas.remove();
+
     const list = document.createElement("ol");
     list.className = "infinite-menu__fallback";
     items.forEach((item, index) => {

@@ -487,6 +487,23 @@ out.catalogue.stageGlow = await evaluate(`(() => {
   };
 })()`);
 
+/* The list, reachable. A canvas that will never be drawn is invisible but not transparent
+   to the pointer, so a fallback that left one over the list would look right and take every
+   click aimed at a match — which is the one thing this path exists to keep working. Asked of
+   the browser rather than read off the stylesheet: elementFromPoint is the browser's own
+   answer to "what would this click land on". */
+out.catalogue.fallbackHitTest = !out.catalogue.fallback ? null : await evaluate(`(() => {
+  const button = document.querySelector('.infinite-menu__fallback-btn');
+  if (!button) return { button: null, topmost: null, reachable: false };
+  const box = button.getBoundingClientRect();
+  const topmost = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+  return {
+    button: button.textContent.trim().slice(0, 48),
+    topmost: topmost ? topmost.className || topmost.tagName : null,
+    reachable: Boolean(topmost) && (topmost === button || button.contains(topmost) || topmost.contains(button))
+  };
+})()`);
+
 /* Whether the sphere drew anything: a band across the middle of the stage, counted for
    how many distinct colours it holds. An empty rectangle is one colour, a card of text and
    scorelines is many — and this is the claim "the sphere is up" that no DOM read can make,

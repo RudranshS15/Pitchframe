@@ -246,7 +246,12 @@ Three decisions in the page are worth naming:
   interface, so failing to draw it must not also fail to reach the matches: the component's
   fallback is a list of the same items, in the same order, each one a click from the same
   replay, and a status line says which of the two was built. The fallback is a real path in
-  the port rather than a message, which is why it has tests of its own.
+  the port rather than a message, which is why it has tests of its own — and not just tests
+  that it was built. The canvas goes with the context that would have drawn on it, because a
+  context-less canvas still covers the stage and still takes clicks: the harness reproduced
+  that, by asking a real browser what a click in the middle of the first row would land on
+  and being told `infinite-menu__canvas`. That is the shape of every failure on this path —
+  a page that looks like a list of matches and cannot be used as one.
 - **The arrow keys are the page's, not the sphere's.** The port binds them on the document,
   guarded so that a key aimed at a control — a field, a button, the feed's own seek — stays
   that control's, which is how the feed's key handler has always been written. Binding them
@@ -552,6 +557,20 @@ Without the variable the class skips; with it and no browser installed, the skip
 of the two is missing. A failure to drive the page is a failure rather than a skip, since the
 run is the thing that was asked for.
 
+CI runs it, in a job of its own: a third job in `.github/workflows/tests.yml` beside the bare
+interpreter and the full suite, because this is the only one that can see the page and the
+only one that needs a second runtime. The runner has no GPU, so it asks for software
+rendering by name — `PITCHFRAME_BROWSER_ARGS="--disable-gpu --enable-unsafe-swiftshader
+--use-angle=swiftshader"` — which is also why that knob exists rather than a flag hard-coded
+here: Chrome 126 onward refuses to fall back to SwiftShader unless it is told to, and without
+it the stage builds no canvas and the sphere half of the run would skip on every push.
+
+The same knob is how the no-WebGL2 path is looked at by a browser rather than by a test that
+pretends: `--browser-arg=--disable-webgl` turns the whole of WebGL off, and the run then
+exercises the sea's empty container, the catalogue's list, the hit test above it and the skip
+in place of the sphere's pixels. It is worth running by hand after touching either renderer,
+because it is the path nothing else reaches.
+
 ### The ported controls
 
 Seven of the pieces on the two pages are ports of React Bits components: the sea
@@ -743,7 +762,12 @@ wrong:
   while the water is rolling does not have to reload.
 - **It fails quietly.** No WebGL2 means no sea, no error and no message: the container
   stays empty and the page is exactly what it was. The module is loaded separately from
-  the replay, so a WebGL failure cannot take the replay down with it.
+  the replay, so a WebGL failure cannot take the replay down with it. *Asking* is what makes
+  that true rather than intended — `ogl` does not hand back a renderer with no context in it,
+  it logs `unable to create webgl context` and then dereferences the missing context, so the
+  constructor throws past any guard placed after it. The probe asks the same question with a
+  canvas of its own and lets go of the answer, and the construction is guarded anyway for the
+  browser that says yes to the probe and no to the real canvas.
 
 It is also cheap. The field is simulated at slat-grid resolution — a few thousand texels —
 and only one full-screen pass is shaded per frame; the loop stops entirely when nothing is

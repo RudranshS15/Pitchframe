@@ -1,15 +1,23 @@
-# Two jobs, because the project makes two different promises and each deserves its own
+# Three jobs, because the project makes three different promises and each deserves its own
 # check.
 #
-#   core   runs on a bare interpreter with nothing installed. This is the promise the
-#          README opens with — no dependencies, no network, no credentials — so the job
-#          installs nothing at all: if a dependency ever creeps into the core, this is
-#          the job that fails rather than a reader discovering it.
-#   full   installs requirements.txt, which is what makes the overlay server and the
-#          real model tiers importable, and runs every test including the HTTP ones.
+#   core    runs on a bare interpreter with nothing installed. This is the promise the
+#           README opens with — no dependencies, no network, no credentials — so the job
+#           installs nothing at all: if a dependency ever creeps into the core, this is
+#           the job that fails rather than a reader discovering it.
+#   full    installs requirements.txt, which is what makes the overlay server and the
+#           real model tiers importable, and runs every test including the HTTP ones.
+#   browser installs Node as well and runs the gated harness, which is the only job that
+#           can see the page: the sea, the sphere and the panel glow are canvas and
+#           computed style, and every way they can break is invisible to a test that reads
+#           files. It is separate from `full` because `full` has to stay fast and
+#           dependency-light, while this one launches Chrome and takes half a minute.
 #
 # Python is pinned to 3.13 for the same reason requirements.txt pins it: 3.14 does not
 # yet have wheels for the whole agent dependency chain. The core itself runs on both.
+# Node is pinned to 24 because the driver is a module that uses the platform's own
+# WebSocket, which Node 22 and later have and which older versions only offered behind a
+# flag.
 
 name: tests
 
@@ -60,3 +68,48 @@ jobs:
 
       - name: The suite
         run: python -m unittest discover -s tests -t .
+
+  browser:
+    name: the overlay in a real browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      # The harness drives Node and the runner's own Chrome, so this is the one job that
+      # needs a second runtime. No package is installed on either side: the driver is a
+      # plain module that speaks the DevTools protocol over the platform's WebSocket, and
+      # Chrome is already on the runner image.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install
+        run: python -m pip install -r requirements.txt
+
+      # A runner has no GPU, so software rendering has to be asked for by name: Chrome 126
+      # onward refuses to fall back to SwiftShader unless it is told to, and without it the
+      # stage builds no canvas and the sphere half of the run has nothing to measure.
+      # `--disable-gpu` keeps it from looking for a device that is not there.
+      - name: The overlay, driven over the DevTools protocol
+        env:
+          PITCHFRAME_BROWSER: "1"
+          PITCHFRAME_BROWSER_ARGS: "--disable-gpu --enable-unsafe-swiftshader --use-angle=swiftshader"
+        run: python -m unittest tests.test_browser_harness -v
+
+      # The report is the evidence, and a failing step should leave it behind rather than
+      # only the assertion that read it. Runs whether the harness passed or not.
+      - name: The measurements
+        if: always()
+        run: python tools/browser_check.py --json browser-report.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-report
+          path: browser-report.json
+          if-no-files-found: warn

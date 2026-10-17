@@ -1001,6 +1001,27 @@ class TestTheSeaBehindThePage(unittest.TestCase):
         self.assertIn("prefers-reduced-motion", module)
         self.assertIn('addEventListener("change"', module)
 
+    def test_the_sea_asks_for_a_context_before_building_one(self) -> None:
+        """A browser with WebGL turned off gets the plain night and nothing else.
+
+        This used to be a guard *after* the renderer was built, and it was unreachable:
+        `ogl` logs `unable to create webgl context` and then dereferences the missing
+        context, so the constructor throws before the guard runs and the reader gets an
+        exception in the console instead of a background. The port asks first, which also
+        keeps the dependency's own error off a page that is working correctly, and catches
+        the case where the question and the answer disagree — a page that has used up the
+        browser's context budget passes the probe and still has no renderer.
+        """
+        module = self.client.get("/static/slats.js").text
+        probe = module.index('probe.getContext("webgl2")')
+        constructor = module.index("new Renderer(")
+        self.assertLess(probe, constructor, "a renderer is built before anything asked for a context")
+        self.assertIn("try {", module[constructor - 200:constructor], "the constructor can throw and is not guarded")
+        # And the guard that follows still has to hold, for the probe that said yes to a
+        # context the real canvas could not have.
+        self.assertRegex(module, r"if \(!gl \|\| !renderer\.isWebgl2\) \{")
+        self.assertIn('getExtension("WEBGL_lose_context")?.loseContext()', module)
+
 
 @requires_server
 class TestThePortedControls(unittest.TestCase):
@@ -1684,6 +1705,25 @@ class TestTheModeBrowser(unittest.TestCase):
         port = self.client.get("/static/infinite-menu.js").text
         self.assertIn("infinite-menu__fallback", port)
         self.assertIn("fallback: !engine", port)
+
+    def test_the_list_a_browser_without_webgl2_gets_is_clickable(self) -> None:
+        """The canvas goes with the context that would have drawn on it.
+
+        A canvas with no context draws nothing, but it is still a canvas: it is absolutely
+        positioned over the whole stage, it carries `cursor: grab`, and it is in the tree
+        *under* the list. Leaving it there is a stage that looks exactly like a list of
+        matches and takes every click aimed at one — which the browser harness reproduced
+        before this removal, by asking the browser what a click in the middle of the first
+        row would land on. The check here is the one a file can make: that the removal is
+        in the fallback and not somewhere that would also take the sphere's canvas away.
+        """
+        port = self.client.get("/static/infinite-menu.js").text
+        fallback = port.index("function buildFallback()")
+        removal = port.index("dom.canvas.remove()", fallback)
+        self.assertLess(removal, port.index("const list = document.createElement", fallback))
+        # The sphere's own path keeps it: exactly one append of the canvas, at mount.
+        self.assertEqual(port.count("root.append(dom.canvas"), 1)
+        self.assertIn('dom.canvas.className = "infinite-menu__canvas"', port)
 
     def test_the_arrow_keys_are_answered_wherever_a_reader_is(self) -> None:
         """The page prints "Arrow keys step" the moment it opens — before the reader has

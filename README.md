@@ -5,7 +5,7 @@ stream into explainable, personalised narratives.
 
 > **Status: working end to end.** The generator, the analytics engine, the claim
 > layer, the Narrator/Verifier loop, the live overlay, the goal build-up panel and
-> the player ratings with the man of the match are implemented and tested (505
+> the player ratings with the man of the match are implemented and tested (507
 > tests; the seven that drive a real browser are behind a gate — see
 > [Development](#development)). See [Roadmap](#roadmap) for what is still open.
 
@@ -399,7 +399,11 @@ panel glow are canvas and computed style, and what they look like is measured by
 `tools/browser_check.py`, which starts the overlay and a browser and drives the tab over the
 DevTools protocol. It is gated because it takes about half a minute and launches Chrome;
 with the gate set and no browser installed it skips and says so, and a failure to drive the
-page is a failure rather than a skip.
+page is a failure rather than a skip. CI runs it that way in a job of its own, on the
+runner's own Chrome and with software rendering asked for by name — so a change that breaks
+the glow, the sphere or the fallback list fails a push rather than a person. `python
+tools/browser_check.py --browser-arg=--disable-webgl` is the same run with WebGL turned off,
+which is how the paths a browser without it takes get looked at.
 
 ## Roadmap
 

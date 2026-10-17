@@ -466,13 +466,33 @@ export function createSlats(container, options = {}) {
     }
   };
 
-  const renderer = new Renderer({ alpha: true, premultipliedAlpha: true, antialias: false, depth: false });
+  /* Asked before it is built rather than repaired after, because `ogl` does not return a
+     renderer with no context in it — it logs `unable to create webgl context` and then
+     dereferences the missing context, which throws out of this function and past the guard
+     below. A browser with WebGL turned off would then get an exception in its console and a
+     page whose background is not the sea *or* the plain night, which is the one outcome this
+     port exists to avoid. The probe asks the same question with a canvas of its own, and
+     lets go of the context it gets so that opening the page does not hold one of the
+     browser's handful against the real renderer. */
+  const probe = document.createElement("canvas");
+  const probed = probe.getContext("webgl2");
+  if (!probed) return handle;
+  probed.getExtension("WEBGL_lose_context")?.loseContext();
+
+  let renderer = null;
+  try {
+    renderer = new Renderer({ alpha: true, premultipliedAlpha: true, antialias: false, depth: false });
+  } catch {
+    /* The probe said yes and the real context still refused — a page that has spent the
+       browser's context budget, a driver that gave up. Same outcome as no WebGL at all. */
+    return handle;
+  }
   const gl = renderer.gl;
 
   /* No WebGL2 means no sea. Nothing is drawn, nothing is reported, and the page keeps the
      plain night it had before: a background is not worth an error message. */
-  if (!renderer.isWebgl2) {
-    gl.getExtension("WEBGL_lose_context")?.loseContext();
+  if (!gl || !renderer.isWebgl2) {
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
     return handle;
   }
 

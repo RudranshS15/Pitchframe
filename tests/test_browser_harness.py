@@ -66,6 +66,10 @@ PANELS = ["board", "ratings", "feed", "check", "ledger", "metrics", "squads"]
 
 _REPORT: dict | None = None
 
+#: What the driver said when something went wrong, kept so that a test can quote it. An
+#: assertion about a page's console is worth far more with the console in its message.
+_DIAGNOSTICS = ""
+
 
 def _orchestrator():
     """``tools/browser_check.py``, loaded by path: tools/ is not an importable package."""
@@ -107,7 +111,7 @@ ASKED = os.environ.get(GATE) == "1"
 
 def report() -> dict:
     """The browser run's report, produced once and shared by every test below."""
-    global _REPORT
+    global _REPORT, _DIAGNOSTICS
     if _REPORT is None:
         with tempfile.TemporaryDirectory(prefix="pitchframe-report-") as directory:
             path = Path(directory) / "report.json"
@@ -120,12 +124,25 @@ def report() -> dict:
                 errors="replace",
                 timeout=TIMEOUT_SECONDS,
             )
-            if completed.returncode != 0 or not path.exists():
+            diagnostics = f"{completed.stdout[-2000:]}\n{completed.stderr[-4000:]}"
+            if not path.exists():
                 raise AssertionError(
-                    "the browser harness did not produce a report "
-                    f"(exit {completed.returncode}):\n{completed.stdout[-2000:]}\n{completed.stderr[-4000:]}"
+                    f"the browser harness did not produce a report (exit {completed.returncode}):\n"
+                    + diagnostics
                 )
-            _REPORT = json.loads(path.read_text(encoding="utf-8"))
+            drove_the_page = json.loads(path.read_text(encoding="utf-8"))
+            # A run that exits nonzero with a report in hand is a page that threw on the way:
+            # the report is complete, and `test_neither_page_reported_a_problem` is the right
+            # place to fail, quoting the console text the driver collected. An exit code with
+            # nothing in `problems` to explain it is the harness failing to do its job — a
+            # server that would not start, a driver that threw, a browser that never
+            # answered — and that does raise here.
+            if completed.returncode != 0 and not drove_the_page.get("problems"):
+                raise AssertionError(
+                    f"the browser harness exited {completed.returncode}:\n" + diagnostics
+                )
+            _DIAGNOSTICS = diagnostics if completed.returncode != 0 else ""
+            _REPORT = drove_the_page
     return _REPORT
 
 
@@ -136,6 +153,7 @@ class BrowserHarnessTest(unittest.TestCase):
 
     report: dict = {}
     feed: dict = {}
+    diagnostics = ""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -148,6 +166,7 @@ class BrowserHarnessTest(unittest.TestCase):
         """
         cls.report = report()
         cls.feed = cls.report["feed"]
+        cls.diagnostics = _DIAGNOSTICS
 
     # ------------------------------------------------------------- the helpers -- */
 
@@ -359,13 +378,32 @@ class BrowserHarnessTest(unittest.TestCase):
         measured in pixels — an empty stage is one colour. The address is the page's own,
         followed rather than composed: the card offers ``/match/<key>``, and the harness
         fetches the replay behind that key and the page at that address.
+
+        A browser with no WebGL2 skips the drawing half and asserts the other path instead.
+        That is the page working as designed — the fallback list *is* the interface on such a
+        browser, and it is a real path in the port rather than a message — so failing here
+        would be a red build for a machine, not a bug. What is left is the claim that still
+        holds either way: the front door is up, the stage was filled by one of the two, and
+        the catalogue was counted. Which of the two was built is measurable, and the run
+        reports it as a skip so a CI log cannot quietly lose the sphere.
         """
         catalogue = self.report["catalogue"]
         self.assertTrue(catalogue["ready"], "the stage never filled")
         self.assertEqual(catalogue["path"], "/")
         self.assertIn("matches", catalogue["count"], "the page did not count the catalogue")
 
-        self.assertTrue(catalogue["webgl2"], "this browser has no WebGL2, so this check cannot run")
+        if not catalogue["webgl2"]:
+            self.assertTrue(catalogue["fallback"], "WebGL2 is absent and the list was not built either")
+            self.assertNotEqual(catalogue["cards"]["rows"], [], "the fallback list is empty")
+            self.assertIn("no WebGL2", catalogue["status"], "nothing on the page says which was built")
+            # The list is up and the reader can actually use it. Measured rather than read off
+            # the stylesheet, because the way this path breaks is invisible: an empty canvas
+            # left over the list looks exactly like a list, and takes every click aimed at it.
+            hit = catalogue["fallbackHitTest"]
+            self.assertIsNotNone(hit, "the fallback list was built and nothing asked whether it works")
+            self.assertTrue(hit["reachable"], f"{hit['topmost']} is over the first row, not the row")
+            self.skipTest("this browser has no WebGL2, so there is no sphere to measure")
+
         self.assertTrue(catalogue["canvas"], "WebGL2 is available and the sphere was not built")
         self.assertFalse(catalogue["fallback"])
         self.assertGreater(catalogue["stagePixels"]["colours"], 100, "the stage is an empty rectangle")
@@ -397,9 +435,11 @@ class BrowserHarnessTest(unittest.TestCase):
         inside its own frame loop leaves a page that looks right and has stopped moving. The
         driver collects these as they happen, per page, so a failure names the page it was
         on. The faces are requested from a CDN and never waited on, so a failure to reach
-        them is filtered out where it is collected rather than forgiven here.
+        them is filtered out where it is collected rather than forgiven here. When the run
+        exited nonzero because of them, what the driver said is quoted with the failure
+        rather than left in a log nobody opens.
         """
-        self.assertEqual(self.report["problems"], [])
+        self.assertEqual(self.report["problems"], [], self.diagnostics)
 
 
 if __name__ == "__main__":

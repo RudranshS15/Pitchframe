@@ -24,6 +24,13 @@ WebSocket the browser's own DevTools does.
 
 Exits 0 when the driver finished, nonzero when it could not run or the page threw. The
 report's numbers are not judged here; see the test.
+
+``--browser-arg`` (or ``PITCHFRAME_BROWSER_ARGS``, which CI uses) passes a flag straight to
+the browser, and it exists for the two things a machine cannot answer by itself. One is the
+no-WebGL2 path: ``--browser-arg=--disable-webgl`` is the only way to see the catalogue's
+fallback list drawn by a real browser rather than by a test that pretends. The other is a
+runner with no GPU, where software rendering has to be asked for by name before the sphere
+can be measured at all.
 """
 
 from __future__ import annotations
@@ -178,6 +185,12 @@ def run(args: argparse.Namespace) -> int:
             print(f"error: the process at {base} is older than the files here; restart it.", file=sys.stderr)
             return 2
 
+        # The command line wins over the environment, and the environment is what a CI job
+        # sets: nobody types a flag twice into a workflow that also has a default.
+        extra_args = args.browser_arg
+        if extra_args is None:
+            extra_args = os.environ.get("PITCHFRAME_BROWSER_ARGS", "").split()
+
         profile = Path(tempfile.mkdtemp(prefix="pitchframe-browser-"))
         profile_path = str(profile).replace("\\", "/")
         launch = [
@@ -189,13 +202,17 @@ def run(args: argparse.Namespace) -> int:
             "--disable-extensions",
             "--disable-sync",
             "--disable-background-networking",
-            "--window-size=1440,900",
-            # A window on somebody's desktop, opened to take four screenshots, is a window
+            "--window-size=1440,900",            # A window on somebody's desktop, opened to take four screenshots, is a window
             # they have to close. Headless unless asked otherwise.
-            *( [] if args.headed else ["--headless=new", "--hide-scrollbars"] ),
+            *([] if args.headed else ["--headless=new", "--hide-scrollbars"]),
+            # The caller's own flags last, so one of them can override a default above.
+            *extra_args,
             base + "/",
         ]
-        print(f"driving {chrome.name} (pid pending) against {base}", file=sys.stderr)
+        print(
+            f"driving {chrome.name} {' '.join(extra_args)} against {base}".replace("  ", " "),
+            file=sys.stderr,
+        )
         browser_process = subprocess.Popen(
             launch,
             stdout=subprocess.DEVNULL,
@@ -268,6 +285,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--node", default="node", help="the driver's interpreter (default: node)")
     parser.add_argument("--match", default="/match/matchday", help="the match path to open")
     parser.add_argument("--headed", action="store_true", help="show the browser window")
+    parser.add_argument(
+        "--browser-arg",
+        action="append",
+        default=None,
+        help="extra flag for the browser, repeatable (default: PITCHFRAME_BROWSER_ARGS)",
+    )
     parser.add_argument("--json", help="write the report here as well as printing it")
     parser.add_argument("--quiet", action="store_true", help="do not print the report")
     parser.add_argument("--timeout", type=float, default=300.0, help="seconds for the driver")
