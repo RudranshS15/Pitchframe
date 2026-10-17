@@ -519,17 +519,23 @@ pointer three pixels inside the feed's left boundary, the replay paused:
   0.136 (225px), and the four panels past the reach at 0.000 with all three of their layers
   at opacity 0. Under the eight-lamps version the ratings and the match bar would both have
   been dark, because neither is hovered;
-- in a 10px band inside that boundary 93% of the pixels change and the mean channel value
-  rises from 20.8 to 76.2, while the same rows at the *opposite* boundary move by 9.9 and
-  the panel's interior by 12.3 — and two frames with nothing moved between them differ in
-  **zero** pixels, which is what makes those numbers about the light and not about the sea;
+- in a 10px band inside that boundary about 95% of the pixels change and the mean channel
+  value rises from 21 to 76, while the same rows at the *opposite* boundary move by about 10
+  and the panel's interior by under 13. Those four figures move a percent or so between runs,
+  because the page's scroll offset and the tile the sphere is showing both do — the feed
+  scrolls as rows arrive and the sphere keeps turning — so what the harness asserts is that
+  the boundary changes far more than the opposite boundary and the interior, not a digit. Two
+  frames with nothing moved between them differ in **zero** pixels, in all three bands, and
+  that one is asserted exactly: it is what makes every difference above the light and not the
+  sea;
 - with the pointer parked in the far corner, the feed's share is 0.000 and every layer of it
   is at 0; focusing a control inside it takes it back to 1.000 with the ring at full and the
   cone aimed at the button, and blurring it gives it back to the pointer.
 
-The same run draws the front door: WebGL2 present, a canvas built, 5086 distinct colours in
-a band across the stage (an empty rectangle is one), six arrow presses changing the front
-card from `/match/matchday` to `/match/switch`, and both of those addresses followed inside
+The same run draws the front door: WebGL2 present, a canvas built, some five thousand
+distinct colours in a band across the stage (an empty rectangle is one), six arrow presses
+changing the front card from `/match/matchday` to `/match/switch`, and both of those
+addresses followed inside
 the page — the replay behind the key answers 200 with a seed, and the page at the address is
 the feed rather than a redirect. Neither page logged an exception, a console error or a
 failed request, the Google Fonts request being the one failure this project intends.
