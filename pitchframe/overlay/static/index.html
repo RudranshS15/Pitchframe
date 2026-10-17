@@ -3,13 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pitchframe — verified match feed</title>
-<meta name="description" content="A live football feed in which every published line is a claim that was checked against the event stream, with the measurement shown beside it.">
+<title>Pitchframe — mode browser</title>
+<meta name="description" content="Every named match this project can replay, on one sphere. Each card is a seed; opening one runs the same verified feed the rest of the overlay serves.">
 <meta name="color-scheme" content="dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23070A0F'/%3E%3Ccircle cx='16' cy='16' r='7.5' fill='none' stroke='%232FD08A' stroke-width='2.5'/%3E%3C/svg%3E">
 
-<!-- Fonts load without blocking paint. With no network the page keeps its condensed
-     and monospace system faces and never waits on a font request. -->
+<!-- The same three faces the feed uses, and the same rule about them: they are requested
+     but never waited on. The tile art is drawn from these faces into a canvas, so with no
+     network the cards are set in the condensed and monospace system faces instead and the
+     page is exactly what it was. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" media="print" onload="this.media='all'"
@@ -19,245 +21,67 @@
 </noscript>
 <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body data-view="fan">
-<a class="skip" href="#feed">Skip to commentary</a>
+<body class="mb">
 
-<!-- The sea behind the page. Inert and decorative, in its own module so that a browser
-     without WebGL2 — or a WebGL failure of any kind — cannot take the replay down with
-     it. See slats.js for the effect and styles.css for why it has a colour of its own. -->
-<div class="slats" id="slats" data-slats aria-hidden="true"></div>
+<main class="mb__wrap">
 
-<div class="wrap">
-
-  <!-- ---------------------------------------------------------------- masthead -->
-  <header class="masthead">
-    <div class="brand">
+  <header class="mb__head">
+    <p class="brand">
       <span class="brand__mark" aria-hidden="true">PF</span>
       <span class="brand__name">Pitchframe</span>
-      <span class="brand__tag">Every line checked</span>
-    </div>
-
-    <div class="masthead__side">
-      <p class="provider" id="provider" title="Which model tier produced the wording">
-        <span class="provider__beacon" aria-hidden="true"></span>
-        <span id="provider-text">connecting…</span>
-      </p>
-      <!-- RubberSegment, filled by app.js. It used to be two pressed buttons; the control
-           is now the component's, and the page still only supplies the words. -->
-      <div class="seg seg--view" id="view-seg" data-segment="view" role="group" aria-label="Choose a view"></div>
-    </div>
+      <span class="brand__tag">Mode browser</span>
+    </p>
+    <a class="mb__back" href="/match">The match feed →</a>
   </header>
 
-  <!-- --------------------------------------------------------------- match bar -->
-  <section class="board" aria-label="Match">
-    <div class="board__turf" aria-hidden="true"></div>
+  <h1 class="mb__title">Every match, on one sphere</h1>
 
-    <div class="board__score">
-      <p class="board__team board__team--home"><span class="board__name" id="team-home">Home</span></p>
-      <p class="board__goals" id="score" aria-label="Score">0<i>–</i>0</p>
-      <p class="board__team board__team--away"><span class="board__name" id="team-away">Away</span></p>
-    </div>
+  <p class="mb__lede">
+    Each card is one named match this project generates, with what the match contains
+    written on it: the scoreline, how many goals, how many came from moves of five touches
+    or more, and where in the ninety minutes those goals fell. Pick one and the feed opens
+    on it — every line of that replay still carries its own measurement, because nothing
+    here replaces the verification, it only chooses what to verify.
+  </p>
 
-    <div class="board__meta">
-      <div class="clock">
-        <span class="clock__minute" id="clock">0<i>′</i></span>
-        <span class="clock__state" id="clock-state">paused</span>
-      </div>
+  <!-- The sphere is built into this slot by static/mode-browser.js. The component it is
+       built from (static/infinite-menu.js) appends its own root here, so the page's own
+       layout stays the page's, and a browser without WebGL2 gets that component's fallback
+       list in the same slot rather than an empty rectangle. -->
+  <div class="mb__stage" id="mb-stage" data-mode-browser aria-label="Named matches"></div>
 
-      <div class="share" role="img" id="share" aria-label="Possession share">
-        <span class="share__bar" id="share-bar"></span>
-      </div>
-      <p class="share__legend">
-        <span>Home <b id="share-home-pct">–</b></span>
-        <span class="share__def">share of completed passes</span>
-        <span><b id="share-away-pct">–</b> Away</span>
-      </p>
+  <p class="mb__status" id="mb-status" role="status">Loading the catalogue…</p>
 
-      <div class="transport">
-        <button type="button" class="transport__play" id="play" aria-label="Play the replay">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5 13 8 4 13.5z"/></svg>
-        </button>
-        <div class="seg seg--speed" id="speed-seg" data-segment="speed" role="group" aria-label="Replay speed"></div>
-        <!-- The seek is a port (static/wake-slider.js): a track of bars that lifts into a
-             wake around the handle, snapped to the minute. It carries its own name and its
-             own value on the handle, so there is no label element here and no range input
-             to keep in step with it. -->
-        <div class="transport__seek" id="seek" data-wake="seek"></div>
-        <p class="transport__note" id="rate-note">1 second = 1 match minute</p>
-      </div>
-    </div>
-  </section>
+  <p class="mb__count" id="mb-count"></p>
 
-  <!-- ---------------------------------------------------------------- the grid -->
-  <main class="grid">
+  <p class="mb__note">
+    Every card is a seed, and a seed is the whole match: the sphere chooses between
+    replays that already exist rather than generating anything on the way to one. The
+    catalogue is served from the project's own scenario registry, so a card cannot offer a
+    match the feed has not measured.
+  </p>
 
-    <!-- ------------------------------------------------------------- the feed -->
-    <section class="feed" id="feed" aria-label="Commentary">
-      <header class="feed__head">
-        <h2 class="feed__title">Commentary</h2>
-        <p class="feed__note" id="feed-note">
-          Published lines only, newest last.
-        </p>
-      </header>
-
-      <!-- Fan view keeps one honest line about what is happening underneath, and a
-           way to look at it. A viewer should not have to guess that a check ran. -->
-      <p class="promo" id="promo">
-        <span id="promo-text">Waiting for the first window.</span>
-        <button type="button" class="promo__btn" id="promo-btn">See the receipts</button>
-      </p>
-
-      <!-- Not a live region: during playback a row lands every few seconds and
-           announcing each one would flood a screen reader. The check panel above
-           is the live region instead, because it carries the one thing worth
-           interrupting for. -->
-      <ol class="feed__list" id="feed-list"></ol>
-
-      <p class="feed__empty" id="feed-empty">
-        The feed opens with the first analysed window, because a claim is a comparison
-        and the opening minutes have nothing to compare against. Press play, or drag
-        the timeline to a minute.
-      </p>
-    </section>
-
-    <!-- The right-hand column. Source order puts the check first so that on a narrow
-         screen, where the column stacks, the verification leads the page. -->
-    <div class="side">
-
-    <!-- Pinned as a pair: the claim being checked, and the running tallies. Those two
-         are what an analyst wants in view while the commentary scrolls. -->
-    <div class="side__pin">
-
-    <!-- ------------------------------------------------ the signature: the check -->
-    <section class="check" id="check" data-state="idle" aria-label="Claim being checked">
-      <p class="eyebrow">
-        <span id="check-window">No window analysed yet</span>
-        <span class="chip" id="check-chip" hidden></span>
-      </p>
-
-      <blockquote class="check__saying" id="check-saying">
-        The most recent claim appears here with the two measurements that decide it —
-        what the claim said, and what the event stream says.
-      </blockquote>
-
-      <dl class="figures" id="check-figures" hidden>
-        <div class="figures__row"><dt>claimed</dt><dd id="fig-claimed">–</dd></div>
-        <div class="figures__row"><dt>measured</dt><dd id="fig-measured">–</dd></div>
-      </dl>
-
-      <p class="check__stamp" id="check-stamp" hidden></p>
-      <p class="check__why" id="check-why" hidden></p>
-      <p class="check__foot">Decided by arithmetic, never by a language model.</p>
-    </section>
-
-      <section class="ledger" aria-label="Verification ledger">
-        <h2 class="eyebrow">Ledger</h2>
-        <dl class="ledger__grid">
-          <div class="ledger__cell ledger__cell--verify"><dt>Published</dt><dd id="led-verified">0</dd></div>
-          <div class="ledger__cell ledger__cell--flag"><dt>Caught</dt><dd id="led-rejected">0</dd></div>
-          <div class="ledger__cell"><dt>Corrected</dt><dd id="led-corrections">0</dd></div>
-          <div class="ledger__cell"><dt>Dropped</dt><dd id="led-dropped">0</dd></div>
-        </dl>
-        <p class="ledger__note" id="ledger-note">
-          Caught counts claims the measurement contradicted.
-        </p>
-      </section>
-    </div>
-
-    <!-- ------------------------------------------------------------- the rail -->
-    <aside class="rail" aria-label="Analysis">
-
-      <section class="metrics" aria-label="Metric readings">
-        <h2 class="eyebrow">
-          <span>Metrics</span>
-          <span class="metrics__window" id="metrics-window"></span>
-        </h2>
-        <table class="metrics__table">
-          <thead>
-            <tr>
-              <th scope="col">metric</th>
-              <th scope="col">baseline</th>
-              <th scope="col">window</th>
-              <th scope="col"><span class="skip">change</span>Δ</th>
-            </tr>
-          </thead>
-          <tbody id="metrics-body"></tbody>
-        </table>
-        <p class="metrics__empty" id="metrics-empty">No closed window yet.</p>
-      </section>
-
-      <section class="squads" aria-label="Line-ups">
-        <h2 class="eyebrow">Line-ups</h2>
-        <div class="squads__cols" id="squads"></div>
-        <p class="squads__note">
-          Invented squads. No real club, player or competition appears anywhere in this
-          project.
-        </p>
-      </section>
-    </aside>
-    </div>
-  </main>
-
-  <!-- ------------------------------------------------------- goal build-up panel -->
-  <!-- A native <dialog>, so the top layer, focus trapping and Escape-to-close are the
-       platform's job rather than ours. The pitch inside is plain SVG drawn from the
-       payload's own coordinates: no canvas, no map tiles, no library, no build step.
-       It opens from a goal on the timeline and from nothing else. -->
-  <dialog class="hl" id="hl" aria-labelledby="hl-title">
-    <header class="hl__head">
-      <div class="hl__id">
-        <p class="eyebrow">Goal build-up</p>
-        <p class="hl__title" id="hl-title">—</p>
-      </div>
-      <button type="button" class="hl__close" id="hl-close" aria-label="Close the build-up">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5 12.5 12.5M12.5 3.5 3.5 12.5"/></svg>
-      </button>
-    </header>
-
-    <!-- Provenance, rendered straight from the payload's own labels. The page never
-         composes these words itself: a view that could invent a label could drop one. -->
-    <p class="hl__labels" id="hl-labels"></p>
-
-    <div class="hl__stage">
-      <svg class="hl__pitch" id="hl-svg" viewBox="0 0 105 68" role="img"
-           aria-label="The path the ball took to the goal"></svg>
-    </div>
-
-    <div class="hl__bar">
-      <p class="hl__step" id="hl-step">—</p>
-      <div class="hl__controls">
-        <button type="button" class="hl__btn" id="hl-replay">Replay</button>
-        <div class="hl__speeds" role="group" aria-label="Build-up speed">
-          <button type="button" class="hl__speed" data-hl-speed="0.5" aria-pressed="false">0.5×</button>
-          <button type="button" class="hl__speed" data-hl-speed="1" aria-pressed="true">1×</button>
-        </div>
-      </div>
-    </div>
-
-    <dl class="hl__figures" id="hl-figures"></dl>
-    <p class="hl__foot" id="hl-foot"></p>
-  </dialog>
-
-  <footer class="foot">
-    <p>
-      <span id="foot-match">—</span>
-      <span class="foot__sep" aria-hidden="true">·</span>
-      <span>generated from a seed, so this replay is identical on every machine</span>
-    </p>
-    <p class="foot__url" id="foot-url"></p>
+  <footer class="mb__foot">
+    <p>generated from a seed, so every one of these replays is identical on every machine</p>
+    <p class="foot__url" id="mb-url"></p>
   </footer>
-</div>
+</main>
 
-<!-- The dock floats at the foot of the viewport. It is filled by app.js, and its rail is
-     inert so that a fixed layer over the page cannot take a click that was meant for the
-     page — the bar inside it is the only part that accepts them. It sits outside .wrap
-     because it belongs to the viewport rather than to the page's column. -->
-<div class="dockrail" id="dockrail" data-dock></div>
+<noscript>
+  <p class="mb__status">
+    The sphere needs JavaScript. Every match is still reachable without it: the feed opens
+    on a named match with <code>/match/matchday</code>, and
+    <code>python -m pitchframe --scenarios</code> prints the whole catalogue with each
+    match's seed.
+  </p>
+</noscript>
 
-<!-- app.js is a module rather than a classic script because it imports the three ported
-     controls. A module is deferred, which is also what the wiring wants: every element it
-     reaches for exists by the time it runs. -->
-<script type="module" src="/static/app.js"></script>
-<script type="module" src="/static/slats.js"></script>
+<script type="module" src="/static/mode-browser.js"></script>
+<script>
+  /* The URL is a frame here too, in the one way this page has: it is the thing a reader
+     copies to say where they were. Not a module, because app.js's rule about deferred
+     modules applies to reaching elements and this reaches one. */
+  document.getElementById("mb-url").textContent = location.origin + location.pathname;
+</script>
 </body>
 </html>

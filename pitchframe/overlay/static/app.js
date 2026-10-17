@@ -21,16 +21,19 @@
  *   can be handed to somebody else — which is what a bug report is. The parameters are
  *   read back at boot and the page opens there, paused.
  *
- * It is a module rather than a classic script because it imports the three ported controls:
+ * It is a module rather than a classic script because it imports the four ported controls:
  * the segmented control (RubberSegment) drawing the view switch and the replay speed, the
- * dock drawing the actions at the foot of the viewport, and the wake slider (WakeSlider)
- * seeking through the match. Each is given its state from here and reports changes back
- * through setView/setSpeed/setPlaying/seekTo, so the panels, the transport and the dock are
- * views of one state rather than states of their own.
+ * dock drawing the actions at the foot of the viewport, the wake slider (WakeSlider)
+ * seeking through the match, and the sling (SlingButton) the build-up launcher is drawn on.
+ * Each is given its state from here and reports changes back through
+ * setView/setSpeed/setPlaying/seekTo or an onSend, so the panels, the transport, the dock
+ * and the launcher are views of one state rather than states of their own.
  */
 
+import { createBorderGlow } from "./border-glow.js";
 import { createDock } from "./dock.js";
 import { createRubberSegment } from "./rubber-segment.js";
+import { createSlingButton } from "./sling-button.js";
 import { createWakeSlider } from "./wake-slider.js";
 
 (() => {
@@ -45,8 +48,35 @@ import { createWakeSlider } from "./wake-slider.js";
   const NEAR_BOTTOM_PX = 240;
 
   const params = new URLSearchParams(location.search);
+
+  /*
+   * The match is named in the path: `/match/quiet`, not `/match?seed=7`.
+   *
+   * A number says nothing about what is behind it, so an address built from one cannot be
+   * read, linked to by hand, or typed from memory — three things a reader does with a URL
+   * and none of which a number supports. The name comes from the path rather than from a
+   * query parameter because the match is *which page this is*, and the query string is
+   * already spoken for: it is the frame — the view, the second, the open build-up, the
+   * fault — which is what a reader shares and what changes while they read.
+   *
+   * The server never serves this page at a name it does not have (an unknown one is a 404
+   * listing the ones there are), and it redirects `/match?seed=7` to `/match/quiet`, so a
+   * link written before matches had names still lands on the match it named. A seed no
+   * scenario owns has no name to go to and stays a seed, which is why both forms are read
+   * here: this page can be reached either way, and neither is a fallback for the other.
+   */
+  const namedMatch = (() => {
+    const parts = location.pathname.split("/").filter(Boolean);
+    return parts.length === 2 && parts[0] === "match" ? decodeURIComponent(parts[1]) : null;
+  })();
+
   const query = {
-    seed: params.get("seed") || "7",
+    /* A name if the address has one, and otherwise the seed it carries — or neither, in
+       the one case left over: an addressed seed that no scenario owns, where the number is
+       the only description of the match there is. The payload reports the seed it actually
+       built, which is what a numbered link has to carry to be reproducible. */
+    scenario: namedMatch,
+    seed: params.get("seed"),
     match_id: params.get("match_id") || "PF-001",
     fault: params.get("fault") || "none",
     view: params.get("view") === "analyst" ? "analyst" : "fan",
@@ -76,6 +106,11 @@ import { createWakeSlider } from "./wake-slider.js";
     ledCorrections: $("led-corrections"), ledDropped: $("led-dropped"),
     metricsBody: $("metrics-body"), metricsWindow: $("metrics-window"),
     metricsEmpty: $("metrics-empty"),
+    ratingsList: $("ratings-list"), ratingsWindow: $("ratings-window"),
+    ratingsEmpty: $("ratings-empty"), ratingsLabels: $("ratings-labels"),
+    award: $("award"), awardName: $("award-name"), awardRating: $("award-rating"),
+    awardReasons: $("award-reasons"), awardText: $("award-text"),
+    launchTitle: $("launch-title"), launchNote: $("launch-note"), sling: $("sling"),
     squads: $("squads"), footMatch: $("foot-match"), footUrl: $("foot-url"),
     hl: $("hl"), hlTitle: $("hl-title"), hlLabels: $("hl-labels"), hlSvg: $("hl-svg"),
     hlStep: $("hl-step"), hlReplay: $("hl-replay"), hlClose: $("hl-close"),
@@ -102,6 +137,11 @@ import { createWakeSlider } from "./wake-slider.js";
        rather than indexed because the timeline and the highlight list are built in
        different places and an index would be a silent coupling between them. */
     goals: new Map(),
+    /* The roster the ratings panel is drawn against: both squads, flattened once. The
+       payload sends a player's mark per frame and nothing else about them, because the
+       names and shirts are already here and repeating them sixteen times is most of a
+       megabyte saying what this list already says. */
+    roster: [],
   };
 
   /* One key for "which goal is this", used on both sides of the lookup. Clock plus
@@ -326,6 +366,9 @@ import { createWakeSlider } from "./wake-slider.js";
     el.shareAway.textContent = possession ? `${((1 - share) * 100).toFixed(0)}%` : "–";
 
     renderLedger(frame);
+    renderRatings(frame);
+    renderAward();
+    renderLauncher();
 
     if (frame) {
       const claimed = new Set(frame.feed.map((r) => r.metric));
@@ -398,6 +441,124 @@ import { createWakeSlider } from "./wake-slider.js";
           </div>`;
       })
       .join("");
+  }
+
+  /* ------------------------------------------------------------ the ratings ---- */
+
+  /* Live, like everything else on this page: each frame carries every player's mark as of
+     that frame's clock, computed on the server from the events up to that minute and
+     nothing later. A mark on screen at 60 minutes is the mark the first hour produced, not
+     the one the match ended with.
+
+     The order is this page's — best first — the way the metric table is ranked here too.
+     The marks, the tallies behind them and the award are the payload's; the page sorts and
+     prints. */
+  let shownRatings = -1;
+
+  function renderRatings(frame) {
+    const block = state.doc && state.doc.ratings;
+    if (!block || !state.roster.length) return;
+    const clock = frame ? frame.clock : -1;
+    /* Re-rendered only when the frame changes. The ratings move at window boundaries and
+       nothing in between, and this panel is 22 rows. */
+    if (clock === shownRatings) return;
+    shownRatings = clock;
+
+    el.ratingsEmpty.hidden = Boolean(frame);
+    el.ratingsWindow.textContent = frame ? `${minuteOf(frame.clock)}\u2032` : "";
+    if (!frame) {
+      el.ratingsList.innerHTML = "";
+      return;
+    }
+
+    const values = frame.ratings.values || {};
+    const rows = state.roster
+      .map((player) => ({ ...player, rating: values[player.id] }))
+      .filter((player) => typeof player.rating === "number")
+      .sort((a, b) => b.rating - a.rating || a.shirt - b.shirt);
+
+    el.ratingsList.innerHTML = rows
+      .map((player) => {
+        const leading = player.id === frame.ratings.leader;
+        return `<li class="ratings__row${leading ? " ratings__row--leading" : ""}">
+          <span class="ratings__shirt">${esc(player.shirt)}</span>
+          <span class="ratings__who">${esc(player.name)}<span class="ratings__pos">${esc(player.position)}</span></span>
+          <span class="ratings__mark">${player.rating.toFixed(1)}</span>
+        </li>`;
+      })
+      .join("");
+  }
+
+  /* The award, once the replay has played the match out. Held back rather than shown greyed
+     out: naming a man of the match before the match ended would spoil the replay exactly as
+     printing the final score would, and this page shows the score as it stands. */
+  let shownAward = false;
+
+  function renderAward() {
+    const block = state.doc && state.doc.ratings;
+    const award = block ? block.award : null;
+    const show = Boolean(award && state.clock >= block.decided_at);
+    if (show === shownAward) return;
+    shownAward = show;
+    el.award.hidden = !show;
+    if (!show) return;
+
+    el.awardName.textContent = `${award.name} \u00b7 ${sideName(award.team)}`;
+    el.awardRating.textContent = award.rating.toFixed(1);
+    el.awardReasons.innerHTML = (award.reasons || [])
+      .map((reason) => `<span class="award__reason">${esc(reason)}</span>`)
+      .join("");
+    el.awardText.textContent = award.conclusion;
+  }
+
+  /* ----------------------------------------------------------- the launcher ---- */
+
+  /* The one control that opens the build-up panel and is always on the page.
+
+     The panel used to open from a goal row on the timeline and from the dock's build-up
+     menu, and both of those exist only once the replay has scored: on the quiet match the
+     feature was unreachable until the 60th minute, which reads as a control that does not
+     work rather than as a match with nothing in it yet. This says what it is waiting for,
+     and lights up the moment a goal lands. */
+  function newestBuildUp() {
+    const reached = state.doc
+      ? state.doc.goals.filter((goal) => goal.clock <= state.clock)
+      : [];
+    for (let index = reached.length - 1; index >= 0; index -= 1) {
+      const goal = reached[index];
+      const highlight = state.goals.get(goalKey(goal.clock, goal.team, goal.player));
+      if (highlight) return { goal, highlight };
+    }
+    return null;
+  }
+
+  function openNewestBuildUp() {
+    const newest = newestBuildUp();
+    if (newest) hlOpen(newest.highlight);
+  }
+
+  /* Described from the reached goals, so the launcher and the scoreboard cannot disagree:
+     both read the same clock. Rebuilt only when the goal it would open changes, so a label
+     under the pointer is not rewritten every frame. */
+  let launchKey = null;
+
+  function renderLauncher() {
+    const newest = newestBuildUp();
+    const key = newest ? goalKey(newest.goal.clock, newest.goal.team, newest.goal.player) : "";
+    if (key === launchKey) return;
+    launchKey = key;
+    sling.set({
+      disabled: !newest,
+      ariaLabel: newest ? `Open the build-up to ${newest.goal.player}'s goal` : "No goal yet"
+    });
+    if (newest) {
+      el.launchTitle.textContent = "Open the build-up";
+      el.launchNote.textContent =
+        `${minuteOf(newest.goal.clock)}\u2032 \u00b7 ${newest.goal.player} \u00b7 ${sideName(newest.goal.team)}`;
+    } else {
+      el.launchTitle.textContent = "Goal build-up";
+      el.launchNote.textContent = "No goal yet — pull it when one lands.";
+    }
   }
 
   /* ------------------------------------------------------- the goal build-up -- */
@@ -683,7 +844,14 @@ import { createWakeSlider } from "./wake-slider.js";
 
   function shareUrl() {
     const share = new URLSearchParams();
-    share.set("seed", query.seed);
+    /* A named match is named in the path, and nothing about the match goes in the query:
+       the name is the seed. A numbered one carries the seed the payload was actually built
+       from, rather than the one this page asked for — a link that omitted the seed and
+       inherited the server's default has to carry the match it opened, or opening it later
+       would build a different one. */
+    if (!query.scenario) {
+      share.set("seed", String(state.doc ? state.doc.seed : query.seed));
+    }
     share.set("match_id", query.match_id);
     share.set("fault", query.fault);
     share.set("view", document.body.dataset.view || query.view);
@@ -899,6 +1067,11 @@ import { createWakeSlider } from "./wake-slider.js";
     el.check.dataset.state = "idle";
     el.checkSaying.textContent = message;
     el.feedNote.textContent = message;
+    /* The launcher says why it cannot be pulled, rather than sitting there dim with a
+       caption about goals. It is the one control on the page whose reason for being off
+       is a failed request. */
+    el.launchTitle.textContent = "Goal build-up";
+    el.launchNote.textContent = "The replay did not load, so there is nothing to open.";
   }
 
   async function boot() {
@@ -906,9 +1079,16 @@ import { createWakeSlider } from "./wake-slider.js";
     setSpeed(1);
     el.footUrl.textContent = location.origin + location.pathname;
 
-    const url = `/api/replay?seed=${encodeURIComponent(query.seed)}` +
-      `&match_id=${encodeURIComponent(query.match_id)}` +
-      `&fault=${encodeURIComponent(query.fault)}`;
+    /* Asked for by name when the address has one, and by number otherwise, which are the
+       two ways a match can be described. Neither is invented here: a page that guessed a
+       default would open a different match from the one its own address names the moment
+       those two disagreed. */
+    const url = `/api/replay?match_id=${encodeURIComponent(query.match_id)}` +
+      `&fault=${encodeURIComponent(query.fault)}` +
+      (query.scenario !== null ? `&scenario=${encodeURIComponent(query.scenario)}` : "") +
+      (query.scenario === null && query.seed !== null
+        ? `&seed=${encodeURIComponent(query.seed)}`
+        : "");
 
     let doc;
     try {
@@ -946,6 +1126,22 @@ import { createWakeSlider } from "./wake-slider.js";
       (doc.fault === "none" ? "" : ` · fault ${doc.fault}`);
     renderProvider(doc.provider);
     renderSquads(doc);
+
+    /* The roster the ratings panel joins its marks against. Built from the payload's own
+       squads, so a player who is not in the replay cannot appear in the panel. */
+    state.roster = ["home", "away"].flatMap((side) =>
+      (doc.squads[side] || []).map((player) => ({
+        id: player.id,
+        name: player.name,
+        shirt: player.shirt,
+        position: player.position,
+      }))
+    );
+    /* Straight from the payload, like the build-up panel's labels: a view that could
+       compose a provenance label could also drop one. */
+    el.ratingsLabels.innerHTML = ((doc.ratings && doc.ratings.labels) || [])
+      .map((label) => `<span class="ratings__label">${esc(label)}</span>`)
+      .join("");
     /* The bar is described from the document, so it is re-described once there is one: a
        dock built before the fetch cannot offer a build-up menu at all. */
     renderDock();
@@ -969,6 +1165,39 @@ import { createWakeSlider } from "./wake-slider.js";
       resetTo(state.minClock);
       setPlaying(true);
     }
+  }
+
+  /* ----------------------------------------------------------- panel edges --- */
+
+  /* Every panel on the page lights the boundary nearest the pointer, through BorderGlow —
+     a fifth port, and the only one that is not a control. One instance per panel marked
+     `data-glow` in the markup, which is all the page has to say about it: the port reads
+     each panel's own background, radius and tokens off the element, so no option is passed
+     here and there is no second place where a panel's colours are written down.
+
+     No reach is passed either, and that is deliberate: the distance at which a panel stops
+     being lit is a property of *the page* — how far apart these panels are — rather than of
+     any one of them, so it is one constant in the port rather than eight numbers here. The
+     light itself is shared: every instance below registers with the port's one listener and
+     is measured against the same pointer, so what these eight panels draw is eight arcs of
+     one lamp rather than eight lamps that happen to agree on a colour.
+
+     The halo is drawn inside the boundary (`glowRadius: 0`) rather than outside it. The
+     match bar and the check clip their contents, so an outer halo would show on five panels
+     and be cut off on two — and the grid's gap is a centimetre, which is not room for eight
+     concentric glows to overlap in.
+
+     Nothing keeps the handles: the listeners are on the panels themselves and the replay
+     rewrites their contents rather than replacing the panels, so these live as long as the
+     page does and nothing has to be torn down. */
+  for (const panel of document.querySelectorAll("[data-glow]")) {
+    createBorderGlow(panel, {
+      glowRadius: 0,
+      /* A wider cone than the component's 25%, because these are large rectangles: a quarter
+         of a boundary lit reads as a smudge on a panel 40rem wide, where on a card 6rem
+         across it is the whole edge. */
+      coneSpread: 32,
+    });
   }
 
   /* -------------------------------------------------------------- controls --- */
@@ -1050,6 +1279,26 @@ import { createWakeSlider } from "./wake-slider.js";
     });
   }
 
+  /* The launcher's pad. Pulled or tapped, it opens the newest build-up the replay has
+     reached; `set({disabled})` is how the page says whether there is one yet, and the
+     control is never re-mounted, so a pad under a finger is not replaced. */
+  const sling = createSlingButton(el.sling, {
+    size: 56,
+    strokeWidth: 3,
+    armAt: 44,
+    maxPull: 160,
+    launchSpeed: 2600,
+    recoil: 0.2,
+    flight: 120,
+    particles: 14,
+    spread: 60,
+    axis: "any",
+    tapSends: true,
+    disabled: true,
+    ariaLabel: "No goal yet",
+    onSend: () => openNewestBuildUp()
+  });
+
   const dock = createDock(el.dockRail, {
     position: "bottom",
     baseItemSize: 38,
@@ -1107,7 +1356,11 @@ import { createWakeSlider } from "./wake-slider.js";
     { group: "Speed", id: "speed-4", key: "2", label: "4\u00d7", run: () => setSpeed(4) },
     { group: "Speed", id: "speed-16", key: "3", label: "16\u00d7", run: () => setSpeed(16) },
     { group: "View", id: "view-fan", key: "f", label: "Fan view", run: () => setView("fan") },
-    { group: "View", id: "view-analyst", key: "a", label: "Analyst view", run: () => setView("analyst") }
+    { group: "View", id: "view-analyst", key: "a", label: "Analyst view", run: () => setView("analyst") },
+    /* The launcher's own key. It does nothing until a goal has landed, which is the same
+       rule as the pad: the menu row it prints is offered to a reader who has not found the
+       control yet, not to one who should be told about the future. */
+    { group: "Highlights", id: "buildup", key: "g", label: "Goal build-up", run: () => openNewestBuildUp() }
   ];
 
   /* The key printed beside a row, looked up by the same id the row was described from: a

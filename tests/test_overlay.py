@@ -16,9 +16,13 @@ stops being true:
 
 from __future__ import annotations
 
+import argparse
+import contextlib
+import io
 import json
 import re
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
@@ -30,6 +34,8 @@ from pitchframe.overlay.replay import (
     DEFAULT_FIRST_WINDOW_START,
     DEFAULT_WINDOW_SECONDS,
 )
+from pitchframe.ratings import LABELS
+from pitchframe.scenarios import ALL_SCENARIOS, DEFAULT_SCENARIO_KEY, contents
 from pitchframe.stats import METRIC_SPECS
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -47,6 +53,15 @@ requires_server = unittest.skipUnless(
     HAS_SERVER,
     "the overlay server needs fastapi and uvicorn; install requirements.txt",
 )
+
+
+def frame_before(frames: list[dict], clock: int) -> dict:
+    """The last frame that closed before ``clock``, for the tests that compare a
+    player's mark across a goal."""
+    earlier = [frame for frame in frames if frame["clock"] < clock]
+    if not earlier:
+        raise AssertionError(f"no frame closes before {clock}")
+    return earlier[-1]
 
 
 def replay_doc(**overrides: object) -> dict:
@@ -483,14 +498,23 @@ class TestServerShell(unittest.TestCase):
         self.assertEqual(body["status"], "ok")
         self.assertEqual(body["faults"], list(FAULT_MODES))
 
-    def test_the_index_is_served(self) -> None:
-        response = self.client.get("/")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("text/html", response.headers["content-type"])
+    def test_the_front_door_is_the_catalogue_and_the_feed_is_beside_it(self) -> None:
+        """Two pages, two paths, one home each — and the check is which is *where*, because
+        both are HTML and both return 200. A swap would show a reader one unpicked match
+        instead of the choice, and nothing about the response would say so."""
+        front = self.client.get("/")
+        self.assertEqual(front.status_code, 200)
+        self.assertIn("text/html", front.headers["content-type"])
+        self.assertIn("data-mode-browser", front.text)
+
+        feed = self.client.get("/match")
+        self.assertEqual(feed.status_code, 200)
+        self.assertIn("text/html", feed.headers["content-type"])
+        self.assertIn('id="hl"', feed.text)
 
     def test_the_page_loads_its_own_assets(self) -> None:
         """A page whose stylesheet 404s still renders, and looks broken to a judge."""
-        for asset in ("/static/styles.css", "/static/app.js"):
+        for asset in ("/static/styles.css", "/static/app.js", "/static/mode-browser.js"):
             with self.subTest(asset=asset):
                 self.assertEqual(self.client.get(asset).status_code, 200)
 
@@ -501,7 +525,14 @@ class TestServerShell(unittest.TestCase):
         keeps drawing the old build-up panel and nothing anywhere says 503 — so the
         assets are served unstored, and so is the payload they are drawn from.
         """
-        for path in ("/", "/static/app.js", "/static/styles.css", "/api/replay?max_frames=1"):
+        for path in (
+            "/",
+            "/match",
+            "/static/app.js",
+            "/static/styles.css",
+            "/api/replay?max_frames=1",
+            "/api/scenarios",
+        ):
             with self.subTest(path=path):
                 response = self.client.get(path)
                 self.assertEqual(response.headers.get("cache-control"), "no-store")
@@ -509,7 +540,7 @@ class TestServerShell(unittest.TestCase):
     def test_the_build_up_panel_is_in_the_page(self) -> None:
         """The panel is the deliverable, so a page that lost its controls should fail
         here rather than being discovered in a browser."""
-        body = self.client.get("/").text
+        body = self.client.get("/match").text
         for marker in ('id="hl"', 'id="hl-svg"', 'id="hl-replay"', "data-hl-speed", 'id="hl-labels"'):
             with self.subTest(marker=marker):
                 self.assertIn(marker, body)
@@ -613,6 +644,294 @@ class TestServerShell(unittest.TestCase):
         self.assertEqual(self.client.get("/api/replay?seed=-1").status_code, 400)
 
 
+class _Reply:
+    """Just enough of an HTTP response for the readiness probe to read."""
+
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+    def __enter__(self) -> "_Reply":
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        return False
+
+    def read(self) -> bytes:
+        return self.body
+
+
+class TestOpeningItAgain(unittest.TestCase):
+    """What a second start finds on the port, and what it does about it.
+
+    The launcher is a double-click, and a double-click cannot be asked a question — so every
+    state it can find has to be handled where it is found rather than by the reader. Starting
+    a second server regardless would fail with ``address already in use``, which says nothing
+    about what is actually wrong; opening a browser onto a server that has outlived its files
+    would show a page whose own error message is the fix. These are the four states and the
+    three of them that are not "start one".
+    """
+
+    def test_the_probe_tells_the_four_states_apart(self) -> None:
+        """The distinction the whole launcher rests on. A connection refused and a wrong
+        application on the port are both 'not our server', and they need different answers:
+        one means start one, the other means move to another port."""
+        from pitchframe import __main__ as cli
+
+        healthy = b'{"status": "ok", "code": {"stale": false}}'
+        stale = b'{"status": "ok", "code": {"stale": true}}'
+
+        with mock.patch("urllib.request.urlopen", return_value=_Reply(healthy)):
+            self.assertEqual(cli.serving_here("127.0.0.1", 8000), "ok")
+        with mock.patch("urllib.request.urlopen", return_value=_Reply(stale)):
+            self.assertEqual(cli.serving_here("127.0.0.1", 8000), "stale")
+        with mock.patch("urllib.request.urlopen", return_value=_Reply(b"<html>not us</html>")):
+            self.assertEqual(cli.serving_here("127.0.0.1", 8000), "taken")
+        with mock.patch("urllib.request.urlopen", return_value=_Reply(b'{"hello": 1}')):
+            self.assertEqual(cli.serving_here("127.0.0.1", 8000), "taken")
+        with mock.patch(
+            "urllib.request.urlopen",
+            side_effect=urllib.error.HTTPError("u", 404, "no", None, None),
+        ):
+            self.assertEqual(cli.serving_here("127.0.0.1", 8000), "taken")
+        with mock.patch(
+            "urllib.request.urlopen", side_effect=urllib.error.URLError("refused")
+        ):
+            self.assertIsNone(cli.serving_here("127.0.0.1", 8000))
+
+    @requires_server
+    def test_a_second_start_opens_the_one_already_there(self) -> None:
+        """The case a reader will hit most: they bookmarked the catalogue and ran the
+        launcher again. It must open the browser and leave the running server alone — not
+        start a second one, and not replace the first."""
+        from pitchframe import __main__ as cli
+
+        args = argparse.Namespace(host="127.0.0.1", port=8000, inject_fault="none", open=True)
+        printed = io.StringIO()
+        with mock.patch.object(cli, "serving_here", return_value="ok"), mock.patch.object(
+            cli.webbrowser, "open"
+        ) as opened, mock.patch("uvicorn.run") as served, contextlib.redirect_stdout(printed):
+            code = cli._run_overlay(args, 28, "matchday")
+
+        self.assertEqual(code, 0)
+        served.assert_not_called()
+        opened.assert_called_once_with("http://127.0.0.1:8000/")
+
+    @requires_server
+    def test_a_stale_server_is_neither_served_over_nor_opened(self) -> None:
+        """The one state where opening a browser would be actively misleading: the page
+        would load, look right, and refuse every request with a 503 whose own text is the
+        instruction. Saying it here, in the terminal the reader is looking at, is the same
+        message one step earlier."""
+        from pitchframe import __main__ as cli
+
+        args = argparse.Namespace(host="127.0.0.1", port=8000, inject_fault="none", open=True)
+        printed = io.StringIO()
+        with mock.patch.object(cli, "serving_here", return_value="stale"), mock.patch.object(
+            cli.webbrowser, "open"
+        ) as opened, mock.patch("uvicorn.run") as served, contextlib.redirect_stdout(printed):
+            code = cli._run_overlay(args, 28, "matchday")
+
+        self.assertEqual(code, 2)
+        served.assert_not_called()
+        opened.assert_not_called()
+        self.assertIn("older than the files", printed.getvalue())
+        self.assertIn("--overlay", printed.getvalue())
+
+    @requires_server
+    def test_a_port_taken_by_something_else_names_the_flag_that_changes_it(self) -> None:
+        """A reader with another service on 8000 needs one fact: how to move. A traceback
+        from ``uvicorn`` names the port and not the way out."""
+        from pitchframe import __main__ as cli
+
+        args = argparse.Namespace(host="127.0.0.1", port=8000, inject_fault="none", open=True)
+        printed = io.StringIO()
+        with mock.patch.object(cli, "serving_here", return_value="taken"), mock.patch(
+            "uvicorn.run"
+        ) as served, contextlib.redirect_stdout(printed):
+            code = cli._run_overlay(args, 28, "matchday")
+
+        self.assertEqual(code, 2)
+        served.assert_not_called()
+        self.assertIn("--port", printed.getvalue())
+
+    @requires_server
+    def test_an_empty_port_starts_a_server_and_waits_before_opening(self) -> None:
+        """The only state that serves: nothing on the port, so this call is the one that
+        becomes it — and the browser is handed to the readiness wait rather than to
+        ``uvicorn``, because a tab that loads loopback before the socket is listening shows
+        a connection error and leaves the reader reloading."""
+        from pitchframe import __main__ as cli
+
+        args = argparse.Namespace(host="127.0.0.1", port=8000, inject_fault="none", open=True)
+        printed = io.StringIO()
+        with mock.patch.object(cli, "serving_here", return_value=None), mock.patch.object(
+            cli, "open_when_ready"
+        ) as waiting, mock.patch("uvicorn.run") as served, contextlib.redirect_stdout(printed):
+            code = cli._run_overlay(args, 28, "matchday")
+
+        self.assertEqual(code, 0)
+        served.assert_called_once()
+        waiting.assert_called_once_with("http://127.0.0.1:8000/", "127.0.0.1", 8000)
+        # Both addresses, because they are two pages: the catalogue and this match.
+        self.assertIn("http://127.0.0.1:8000/", printed.getvalue())
+        self.assertIn("/match/matchday", printed.getvalue())
+
+    def test_the_browser_opens_only_once_something_answers(self) -> None:
+        """Polls until the server is up, then opens — not before. The count matters as much
+        as the call: opening on the first probe is exactly the race this exists to avoid."""
+        from pitchframe import __main__ as cli
+
+        answers = [None, None, "ok"]
+        seen = []
+
+        def probe(host: str, port: int, timeout: float = 2.0) -> str | None:
+            seen.append((host, port))
+            return answers.pop(0) if answers else "ok"
+
+        with mock.patch.object(cli, "serving_here", side_effect=probe), mock.patch.object(
+            cli.webbrowser, "open"
+        ) as opened, mock.patch.object(cli.time, "sleep"):
+            thread = cli.open_when_ready("http://127.0.0.1:8000/", "127.0.0.1", 8000, timeout=5)
+            thread.join(timeout=5)
+
+        self.assertFalse(thread.is_alive(), "the wait never returned")
+        self.assertEqual(len(seen), 3)
+        opened.assert_called_once_with("http://127.0.0.1:8000/")
+
+    def test_a_server_that_never_answers_says_so_instead_of_opening_a_dead_tab(self) -> None:
+        """Giving up is a state to report, not a silence: a reader whose server failed to
+        start needs the line that says the browser was not opened, or they will wait for a
+        tab that is never coming."""
+        from pitchframe import __main__ as cli
+
+        printed = io.StringIO()
+        with mock.patch.object(cli, "serving_here", return_value=None), mock.patch.object(
+            cli.webbrowser, "open"
+        ) as opened, mock.patch.object(cli.time, "sleep"), contextlib.redirect_stdout(printed):
+            thread = cli.open_when_ready(
+                "http://127.0.0.1:8000/", "127.0.0.1", 8000, timeout=0.3
+            )
+            thread.join(timeout=5)
+
+        opened.assert_not_called()
+        self.assertIn("was not opened", printed.getvalue())
+
+
+@requires_server
+class TestTheNamedMatches(unittest.TestCase):
+    """A match's address says which match it is, and the old ones still open it.
+
+    The seed is the whole of what a replay is a function of, which is why it was the only
+    thing the URL needed to carry. It is also unreadable: ``/match?seed=7`` says nothing
+    about the match behind it, cannot be typed from memory, and cannot be recognised in a
+    list of links — and the project has a registry of named matches precisely because a
+    seed is not a story. So the name is in the path and the seed is what the name resolves
+    to. The failure this class is about is quiet and expensive: a link written before the
+    change that stops working, or a name that silently opens a different match than the one
+    it names, which looks exactly like a match nobody wanted.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.client = TestClient(create_app())
+
+    def test_every_named_match_has_an_address_that_serves_exactly_it(self) -> None:
+        """One address per match, and the page it serves is the page for that match.
+
+        Checked against the replay endpoint rather than against the page's own words: the
+        catalogue promises a name, and what has to be true is that the name and the number
+        build the same match — the same seed, the same goals, the same score — through the
+        API the page itself calls.
+        """
+        entries = self.client.get("/api/scenarios").json()["scenarios"]
+        for entry in entries:
+            with self.subTest(key=entry["key"]):
+                self.assertEqual(entry["path"], f"/match/{entry['key']}")
+                page = self.client.get(entry["path"])
+                self.assertEqual(page.status_code, 200)
+                self.assertIn("text/html", page.headers["content-type"])
+                by_name = self.client.get(f"/api/replay?scenario={entry['key']}").json()
+                by_number = self.client.get(f"/api/replay?seed={entry['seed']}").json()
+                self.assertEqual(by_name, by_number)
+                self.assertEqual(by_name["seed"], entry["seed"])
+                self.assertEqual(len(by_name["goals"]), entry["goals"])
+
+    def test_a_numbered_link_lands_on_the_name_of_that_match(self) -> None:
+        """A link handed out before matches had names is still a working link, and what it
+        lands on is the readable address for the same match. Everything else in the query
+        travels: those parameters describe the frame, not the match."""
+        response = self.client.get("/match?seed=7", follow_redirects=False)
+        self.assertIn(response.status_code, (307, 308))
+        self.assertEqual(response.headers["location"], "/match/quiet")
+        self.assertEqual(response.headers.get("cache-control"), "no-store")
+
+        framed = self.client.get(
+            "/match?seed=28&at=3615&view=analyst&fault=narrator-invert",
+            follow_redirects=False,
+        )
+        self.assertEqual(
+            framed.headers["location"],
+            "/match/matchday?at=3615&view=analyst&fault=narrator-invert",
+        )
+        followed = self.client.get(framed.headers["location"])
+        self.assertEqual(followed.status_code, 200)
+        self.assertIn("text/html", followed.headers["content-type"])
+
+    def test_a_seed_no_scenario_owns_is_still_a_match(self) -> None:
+        """The point of `--seed` is that any seed at all works. A number with no name has no
+        name to be redirected to, so it is served exactly as it always was — and the page
+        then carries the number, because it is the only description of that match there
+        is."""
+        page = self.client.get("/match?seed=99")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("text/html", page.headers["content-type"])
+        document = self.client.get("/api/replay?seed=99").json()
+        self.assertEqual(document["seed"], 99)
+
+    def test_a_bare_match_goes_to_the_default_by_name(self) -> None:
+        """`/match` used to be the default scenario and nothing said so. One address per
+        match means the default has an address too."""
+        response = self.client.get("/match", follow_redirects=False)
+        self.assertIn(response.status_code, (307, 308))
+        self.assertEqual(response.headers["location"], f"/match/{DEFAULT_SCENARIO_KEY}")
+        self.assertEqual(self.client.get(response.headers["location"]).status_code, 200)
+
+    def test_a_name_that_does_not_exist_is_a_named_404(self) -> None:
+        """Refused rather than quietly redirected to the default: a typo that served a
+        different match would look like a match nobody wanted, and the reader would have no
+        way to tell which of the two happened."""
+        response = self.client.get("/match/machday")
+        self.assertEqual(response.status_code, 404)
+        detail = response.json()["detail"]
+        self.assertIn("machday", detail)
+        for key in ALL_SCENARIOS:
+            with self.subTest(key=key):
+                self.assertIn(key, detail)
+        self.assertIn("/match?seed=", detail, "the reader is not told the other way in")
+
+    def test_asking_for_a_name_and_a_number_at_once_is_refused(self) -> None:
+        """They can name different matches, and answering one of them would be a coin toss
+        the caller never sees. An unknown name is refused with the names there are."""
+        both = self.client.get("/api/replay?scenario=quiet&seed=28")
+        self.assertEqual(both.status_code, 400)
+        self.assertIn("not both", both.json()["detail"])
+        unknown = self.client.get("/api/replay?scenario=machday")
+        self.assertEqual(unknown.status_code, 400)
+        self.assertIn("machday", unknown.json()["detail"])
+        self.assertIn(DEFAULT_SCENARIO_KEY, unknown.json()["detail"])
+
+    def test_the_page_reads_the_name_out_of_the_path(self) -> None:
+        """The path is where the match is, and the query is the frame. A page that read the
+        name from a query parameter would write it back into one, and the address would
+        stop being shareable as it stands."""
+        app = self.client.get("/static/app.js").text
+        self.assertIn('location.pathname.split("/")', app)
+        self.assertIn("parts[0] === \"match\"", app)
+        self.assertIn("scenario=${encodeURIComponent(query.scenario)}", app)
+        # The seed goes in a numbered link and not in a named one: the name is the seed.
+        self.assertIn("if (!query.scenario) {", app)
+
+
 @requires_server
 class TestTheSeaBehindThePage(unittest.TestCase):
     """The background is scenery, so none of it can be asserted by reading a number.
@@ -639,7 +958,7 @@ class TestTheSeaBehindThePage(unittest.TestCase):
                 self.assertIn("javascript", response.headers["content-type"])
 
     def test_the_page_imports_it_as_a_module_into_a_marked_container(self) -> None:
-        body = self.client.get("/").text
+        body = self.client.get("/match").text
         self.assertIn("data-slats", body)
         self.assertIn('type="module"', body)
         self.assertIn("/static/slats.js", body)
@@ -647,7 +966,7 @@ class TestTheSeaBehindThePage(unittest.TestCase):
     def test_no_script_comes_from_another_origin(self) -> None:
         """The overlay is shown in rooms without wifi, so the one dependency ships with
         the page rather than being fetched at load."""
-        body = self.client.get("/").text
+        body = self.client.get("/match").text
         sources = re.findall(r'<script[^>]*\bsrc="([^"]+)"', body)
         self.assertTrue(sources, "the page loads no scripts at all")
         for src in sources:
@@ -685,9 +1004,9 @@ class TestTheSeaBehindThePage(unittest.TestCase):
 
 @requires_server
 class TestThePortedControls(unittest.TestCase):
-    """The view switch, the replay speed, the action dock and the match-minutes seek are
-    ports of React Bits components, so what can be asserted from here is the wiring that
-    keeps them working.
+    """The view switch, the replay speed, the action dock, the match-minutes seek and the
+    mode browser's sphere are ports of React Bits components, so what can be asserted from
+    here is the wiring that keeps them working.
 
     Each check exists because the failure it catches looks like nothing at all. A module
     served with the wrong content type never executes. An import pointing at a file nobody
@@ -704,7 +1023,9 @@ class TestThePortedControls(unittest.TestCase):
         cls.client = TestClient(create_app())
 
     def page(self) -> str:
-        return self.client.get("/").text
+        """The feed. The controls under test are all on `/match`; the front door is the
+        catalogue and none of them exist there."""
+        return self.client.get("/match").text
 
     def asset(self, path: str) -> str:
         return self.client.get(path).text
@@ -719,7 +1040,7 @@ class TestThePortedControls(unittest.TestCase):
         css = self.asset("/static/styles.css")
         self.assertIn("the ported controls", css, "the ports' stylesheet section is gone")
         section = css.split("the ported controls", 1)[1].split("states ----- */", 1)[0]
-        for control in (".dock", ".rubber-segment", ".wake-slider"):
+        for control in ("border-glow", ".dock", ".rubber-segment", ".wake-slider", ".sling-button", ".infinite-menu"):
             with self.subTest(control=control):
                 self.assertIn(control, section)
         return section
@@ -727,9 +1048,13 @@ class TestThePortedControls(unittest.TestCase):
     def test_every_module_the_controls_need_is_served_as_javascript(self) -> None:
         for path in (
             "/static/motion.js",
+            "/static/border-glow.js",
             "/static/rubber-segment.js",
             "/static/dock.js",
             "/static/wake-slider.js",
+            "/static/sling-button.js",
+            "/static/infinite-menu.js",
+            "/static/mode-browser.js",
         ):
             with self.subTest(path=path):
                 response = self.client.get(path)
@@ -747,9 +1072,13 @@ class TestThePortedControls(unittest.TestCase):
         seen = 0
         for module in (
             "/static/app.js",
+            "/static/border-glow.js",
             "/static/rubber-segment.js",
             "/static/dock.js",
             "/static/wake-slider.js",
+            "/static/sling-button.js",
+            "/static/infinite-menu.js",
+            "/static/mode-browser.js",
         ):
             for target in re.findall(r'from "(\./[^"]+)"', self.asset(module)):
                 seen += 1
@@ -757,8 +1086,10 @@ class TestThePortedControls(unittest.TestCase):
                     self.assertEqual(
                         self.client.get("/static/" + target.lstrip("./")).status_code, 200
                     )
-        # app.js imports all three controls, and each of them imports the shared runtime.
-        self.assertEqual(seen, 6)
+        # app.js imports its four controls and the glow it dresses the panels with, each of
+        # the six ports imports the shared runtime, and the mode browser imports the sphere
+        # it is built on plus the glow its stage wears.
+        self.assertEqual(seen, 13)
 
     def test_the_page_offers_a_container_and_fills_it(self) -> None:
         """A container nothing writes to is a control that is not there, and the page's own
@@ -903,15 +1234,30 @@ class TestThePortedControls(unittest.TestCase):
         runtime = self.asset("/static/motion.js")
         self.assertIn("prefers-reduced-motion", runtime)
         self.assertIn('addEventListener("change"', runtime)
-        for path in ("/static/rubber-segment.js", "/static/dock.js", "/static/wake-slider.js"):
+        for path in (
+            "/static/border-glow.js",
+            "/static/rubber-segment.js",
+            "/static/dock.js",
+            "/static/wake-slider.js",
+            "/static/sling-button.js",
+            "/static/infinite-menu.js",
+        ):
             with self.subTest(path=path):
                 self.assertIn("watchReducedMotion", self.asset(path))
+                self.assertIn("prefersReducedMotion", self.asset(path))
 
     def test_the_upstream_notice_travels_with_each_port(self) -> None:
         """The upstream licence asks for its notice in copies of the work and names ports
         explicitly, so a ported file stripped of it is a licence breach rather than a
         simplification."""
-        for path in ("/static/rubber-segment.js", "/static/dock.js", "/static/wake-slider.js"):
+        for path in (
+            "/static/border-glow.js",
+            "/static/rubber-segment.js",
+            "/static/dock.js",
+            "/static/wake-slider.js",
+            "/static/sling-button.js",
+            "/static/infinite-menu.js",
+        ):
             with self.subTest(path=path):
                 text = self.asset(path)
                 self.assertIn("Copyright (c) 2026 David Haz", text)
@@ -921,6 +1267,636 @@ class TestThePortedControls(unittest.TestCase):
         self.assertEqual(licence.status_code, 200)
         self.assertIn("Commons Clause", licence.text)
         self.assertIn("ported version", licence.text)
+        # The notice names every port that ships beside it, so the file that lists them
+        # cannot be a subset of the ports in the directory: a port missing from the list is
+        # the same licence breach as a port missing its own header.
+        for name in (
+            "border-glow.js",
+            "rubber-segment.js",
+            "dock.js",
+            "wake-slider.js",
+            "sling-button.js",
+            "infinite-menu.js",
+            "slats.js",
+        ):
+            with self.subTest(listed=name):
+                self.assertIn(name, licence.text)
+
+
+@requires_server
+class TestThePanelGlow(unittest.TestCase):
+    """BorderGlow: the light on a panel's boundary, on every panel of both pages.
+
+    This is the one port here that is not a control. It does not render anything a reader
+    operates, and every way it can go wrong is invisible until it is looked at: a port that
+    wrapped its host would move the nodes app.js holds, a port that copied the component's
+    own card rules would give each panel a display and a background of its own, and a glow
+    that lit every panel the moment the page loaded would be a page that never settles. The
+    checks below are the ones that can be made from here; the ones that cannot — that the
+    boundary actually lights up in a browser when a    pointer arrives — are measured in one, through the DevTools protocol, and asserted in
+    tests/test_browser_harness.py, which is gated behind ``PITCHFRAME_BROWSER=1`` because it
+    launches a browser. What is left here is what a file can say: which panels are marked,
+    what the port is allowed to touch, and which variable each layer's opacity is a function
+    of.
+    """
+
+    #: The panels `match.html` marks, by the class each carries.
+    PANELS = ("board", "ratings", "feed", "check", "ledger", "metrics", "squads")
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.client = TestClient(create_app())
+
+    def glow_css(self) -> str:
+        """The BorderGlow section of the stylesheet, and only it.
+
+        The ports share one section, and the controls after this one are full of ``:hover``
+        rules of their own; a test that read them as the glow's would be testing the dock.
+        The section ends where the controls' own header begins.
+        """
+        css = self.client.get("/static/styles.css").text
+        self.assertIn("the ported controls", css)
+        section = css.split("the ported controls", 1)[1].split("/* ---- the controls:", 1)[0]
+        self.assertIn(".border-glow", section, "the glow's stylesheet section is gone")
+        return section
+
+    def test_every_panel_is_marked_and_the_page_adorns_each_one(self) -> None:
+        """A panel that lost its marker would keep its border and quietly stop lighting it,
+        which looks exactly like a panel nobody has pointed at yet."""
+        body = self.client.get("/match").text
+        for panel in self.PANELS:
+            with self.subTest(panel=panel):
+                self.assertIn(f'class="{panel}"', body)
+                self.assertRegex(
+                    body,
+                    rf'class="[^"]*\b{panel}\b[^"]*"[^>]*data-glow',
+                    "a panel is missing its data-glow marker",
+                )
+        app = self.client.get("/static/app.js").text
+        self.assertIn('querySelectorAll("[data-glow]")', app)
+        self.assertIn("createBorderGlow(panel", app)
+
+    def test_the_port_adorns_a_panel_instead_of_wrapping_it(self) -> None:
+        """Upstream renders a card and renders the children inside it. These panels already
+        exist, and app.js holds references to what is in them — a port that moved them would
+        be rebuilding the page to draw a border on it. So: the class, the layers, and the
+        element's own style left alone."""
+        port = self.client.get("/static/border-glow.js").text
+        self.assertIn("element.prepend(edge)", port)
+        self.assertIn('classList.add("border-glow")', port)
+        self.assertIn('edge.className = "edge-light"', port)
+        for stolen in ("element.style.display", "element.style.background =", "element.style.padding",
+                       "element.innerHTML", "element.append(", "replaceChildren"):
+            with self.subTest(stolen=stolen):
+                self.assertNotIn(stolen, port)
+
+    def test_the_host_keeps_its_own_shape_and_layer_order(self) -> None:
+        """The host rule may say where the layers go and nothing else. Upstream's card rule
+        carries a display, a padding, a border and a background, and any of them here would
+        be the port overriding the page it was added to; the layers themselves have to sit
+        behind the content, which is what the negative z-index and the isolation are for."""
+        host = re.search(r"\.border-glow \{(.*?)\}", self.glow_css(), re.S)
+        self.assertIsNotNone(host, "no .border-glow rule in the stylesheet")
+        # The custom properties are the port's own knobs (--glow-padding among them), so what
+        # is left after them is the whole of what this rule may say about the host.
+        declarations = "\n".join(
+            line for line in host.group(1).splitlines() if not line.strip().startswith("--")
+        )
+        for property_name in ("display", "padding", "margin", "border", "background", "font", "color"):
+            with self.subTest(property=property_name):
+                self.assertNotIn(property_name, declarations)
+        self.assertIn("isolation: isolate", declarations)
+        self.assertIn("position: relative", declarations)
+        layers = self.glow_css()
+        self.assertIn("z-index: -1", layers)
+        self.assertIn("border-radius: inherit", layers)
+        self.assertIn("pointer-events: none", layers)
+
+    def test_the_colours_are_the_stylesheets_and_never_a_verdict(self) -> None:
+        """Green and vermilion mean published and caught on this page, so the glow takes its
+        colours from tokens of its own — a port that hard-coded upstream's purple mesh would
+        be a second place where a colour is decided, and a page whose decoration ignored
+        that rule would be a page whose one signal is ambiguous."""
+        css = self.client.get("/static/styles.css").text
+        root = css.split(":root {", 1)[1].split("}", 1)[0]
+        for token_name in ("--glow-hsl", "--glow-one", "--glow-two", "--glow-three"):
+            with self.subTest(token=token_name):
+                self.assertIn(token_name, root)
+        glow_tokens = [line for line in root.splitlines() if "--glow-" in line]
+        for line in glow_tokens:
+            with self.subTest(line=line.strip()):
+                lowered = line.lower()
+                self.assertNotIn("#2fd08a", lowered)
+                self.assertNotIn("#ff5a36", lowered)
+                self.assertNotIn("var(--verify)", lowered)
+                self.assertNotIn("var(--flag)", lowered)
+                self.assertNotIn("var(--amber)", lowered)
+                self.assertNotIn("var(--home)", lowered)
+                self.assertNotIn("var(--away)", lowered)
+        port = self.client.get("/static/border-glow.js").text
+        for token_name in ("--glow-hsl", "--glow-one", "--glow-two", "--glow-three", "--card-bg"):
+            with self.subTest(read=token_name):
+                self.assertIn(token_name, port)
+
+    def test_the_keyboard_lights_the_same_edge(self) -> None:
+        """A pointer-only decoration is one half the readers never see, and there are
+        controls inside every panel here. Focus lights the edge, aims the cone at the
+        control that took it, and is the one thing that outranks the pointer: the port
+        gives it the whole of the light, so a panel a reader is working in cannot be left
+        dark by a pointer that is somewhere else."""
+        port = self.client.get("/static/border-glow.js").text
+        self.assertIn('addEventListener("focusin", onFocusIn)', port)
+        self.assertIn('addEventListener("focusout", onFocusOut)', port)
+        self.assertIn('element.dataset.lit = "true"', port)
+        self.assertIn('delete element.dataset.lit', port)
+        # The focus path is the falloff, not a rule in the stylesheet: the light the page
+        # has is the light this panel is given, and focus is what claims all of it.
+        measure = re.search(r"function measure\(\) \{(.*?)\n  \}", port, re.S)
+        self.assertIsNotNone(measure, "the port no longer measures a panel against the light")
+        self.assertIn('if (hasFocus) {', measure.group(1))
+        self.assertIn('setProperty("--glow-falloff", "1")', measure.group(1))
+        self.assertNotIn(":not([data-lit])", self.glow_css(), "the panel is gated on hover again")
+
+    def test_the_light_is_one_source_for_the_whole_page(self) -> None:
+        """One pointer, one listener, and a panel's share of the light is the distance
+        from that pointer to its nearest edge.
+
+        Upstream's component decides for itself that the pointer is near it. On a page of
+        one card that is the whole question; on a page of seven panels it is seven lamps,
+        and the seams between them are the pixels where the light changes source. Every
+        check below is a piece of the replacement: the listener the whole page shares, the
+        reach that decides what is lit at all, the token the stylesheet multiplies each
+        layer's opacity by, and the absence of the per-panel pointer handler that would
+        make any of it moot.
+        """
+        port = self.client.get("/static/border-glow.js").text
+        css = self.glow_css()
+
+        # One listener for the page, registered when the first panel arrives and taken off
+        # when the last one goes, and panels are measured against it rather than against
+        # their own pointer. A panel that read the pointer itself is the bug this prevents.
+        self.assertIn("const light = {", port)
+        self.assertIn("panels: new Set(),", port)
+        self.assertIn('document.addEventListener("pointermove", light.onPointerMove', port)
+        self.assertIn("light.add(instance)", port)
+        self.assertIn("light.remove(instance)", port)
+        self.assertNotIn("element.addEventListener(\"pointermove\"", port)
+        self.assertNotIn("onPointerMove(event) {\n    /* One rect read per move", port)
+
+        # The reach, and the measure that reads it off a panel's own edge: a panel the
+        # pointer is inside is at full strength wherever inside it the pointer is, which is
+        # what keeps two panels a pixel apart lit together at the boundary between them.
+        self.assertRegex(port, r"const REACH_PX = \d+;")
+        self.assertRegex(
+            port,
+            r"Math\.max\(rect\.left - light\.x, 0, light\.x - rect\.right\)",
+            "the reach is measured from a centre rather than from the edge",
+        )
+        # The pointer is coalesced to a frame rather than measured per move: eight panels
+        # times dozens of moves a second is a layout the page would pay for and not show.
+        self.assertIn("requestAnimationFrame(() => light.measure())", port)
+
+        # The cone, which each panel still draws for itself: what the one light decides is
+        # where the pointer is, and the panel turns that into the arc facing it.
+        measure = re.search(r"function measure\(\) \{(.*?)\n  \}", port, re.S)
+        self.assertIn("lightEdge(edgeProximity(rect, x, y) * 100, cursorAngle(rect, x, y));", measure.group(1))
+
+        # And the number all three layers are a function of, in the port and in each of
+        # their opacities: a falloff that reached the DOM and no further would be a measure
+        # of nothing.
+        self.assertIn('setProperty(\n      "--glow-falloff",', port)
+        self.assertIn("--glow-falloff: 0;", css)
+        opacities = re.findall(r"opacity: calc\((.*?)\);", css, re.S)
+        self.assertEqual(len(opacities), 3, "a layer's opacity is no longer a single calculation")
+        for calculation in opacities:
+            with self.subTest(calculation=calculation.split()[0]):
+                self.assertIn("var(--glow-falloff)", calculation)
+        # The gate it replaced: a panel was lit because the pointer was over it, which is
+        # exactly the eight-lamps behaviour this light exists to replace.
+        self.assertNotIn(":hover", css, "the panels are still lit by hovering them")
+
+    def test_the_stage_on_the_catalogue_page_is_adorned_with_the_mask_told_which_colour(self) -> None:
+        """The stage's interior is a radial gradient rather than a flat colour, and the mask
+        that keeps the mesh off a panel's inside is filled with whatever colour the port
+        read — which for a gradient element is nothing at all. A transparent mask would let
+        the mesh paint a wedge across the panel instead of a line along it, so the page hands
+        it the token the gradient ends at."""
+        module = self.client.get("/static/mode-browser.js").text
+        self.assertIn("createBorderGlow(stage", module)
+        self.assertRegex(module, r'createBorderGlow\(stage, \{[^}]*backgroundColor: token\("--night"')
+        port = self.client.get("/static/border-glow.js").text
+        self.assertIn("computed.a === 1", port, "a panel with no flat colour would be masked with nothing")
+
+    def test_the_sweep_is_watched_rather_than_sampled(self) -> None:
+        """The intro sweep is the one thing here that moves on its own, so it has to stop
+        when a reader turns reduced motion on mid-flight — and never start when the setting
+        was already on at load."""
+        port = self.client.get("/static/border-glow.js").text
+        self.assertIn("if (reduced) return;", port)
+        self.assertIn("detachMotion = watchReducedMotion", port)
+        self.assertRegex(
+            port,
+            r"if \(matches\) \{\s*stopSweep\(\);",
+        )
+        self.assertIn("let reduced = prefersReducedMotion();", port)
+
+
+@requires_server
+class TestTheModeBrowser(unittest.TestCase):
+    """The catalogue as a sphere: the endpoint it comes from, and the page that draws it.
+
+    This is the layer that made the named matches reachable. They existed and were tested,
+    but the only way into one was to type it — ``?seed=28`` into the feed's URL, ``--seed
+    28`` on the command line — and a catalogue nobody can browse is a list. Each check here
+    exists because its failure looks like nothing at all:
+
+    * A card list written into the page is a second catalogue, and the first generator
+      retune leaves it describing matches that are no longer there.
+    * A card whose seed the replay endpoint refuses is a door onto nothing, and it looks
+      exactly like a door onto a match.
+    * A module served with the wrong content type never executes, so the stage stays empty
+      and the page reports no error anywhere a test can see.
+    * The sphere needs WebGL2. On a browser without it the page has to offer the same
+      matches rather than an empty box, which is a claim about code nobody runs by default.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.client = TestClient(create_app())
+
+    def catalogue(self) -> dict:
+        return self.client.get("/api/scenarios").json()
+
+    def test_the_endpoint_returns_every_registered_scenario(self) -> None:
+        """The count, the order and the default, which is all the page needs to open on the
+        right card. A default missing from the payload is a sphere that starts wherever the
+        iteration happened to land."""
+        body = self.catalogue()
+        self.assertEqual(body["count"], len(ALL_SCENARIOS))
+        self.assertEqual([entry["key"] for entry in body["scenarios"]], list(ALL_SCENARIOS))
+        self.assertEqual(
+            [entry["key"] for entry in body["scenarios"] if entry["default"]],
+            [DEFAULT_SCENARIO_KEY],
+        )
+
+    def test_the_catalogue_is_the_registrys_own_facts(self) -> None:
+        """Every field a card prints or draws, checked against the registry rather than
+        against the module that produced the JSON: an endpoint that asked
+        ``pitchframe.scenarios.catalogue`` whether it agreed with itself would pass for a
+        page describing matches nobody can open."""
+        for entry in self.catalogue()["scenarios"]:
+            with self.subTest(key=entry["key"]):
+                item = ALL_SCENARIOS[entry["key"]]
+                facts = contents(item.seed)
+                self.assertEqual(entry["seed"], item.seed)
+                self.assertEqual(entry["label"], item.label)
+                self.assertEqual(entry["note"], item.note)
+                self.assertEqual(entry["home"], facts["home"])
+                self.assertEqual(entry["away"], facts["away"])
+                self.assertEqual(entry["score"], list(facts["score"]))
+                self.assertEqual(entry["minutes"], facts["minutes"])
+                self.assertEqual(entry["long_build_ups"], facts["long_build_ups"])
+
+    def test_every_card_opens_the_match_it_describes(self) -> None:
+        """The whole promise of the page: open a card and the match it named is what plays.
+
+        Every entry, through HTTP, with no frame limit — about eight seconds, which is worth
+        it because the interesting failure is a single card. Fifteen good ones and one whose
+        seed the endpoint refuses is a sphere with a dead tile on it, and it is the reader
+        who finds that, not this suite.
+
+        The comparison is against the *document*, not against the catalogue's own words: the
+        card says nine goals, so the replay has to hand the page nine goals, at those
+        minutes, each with a build-up to open — and the count of long build-ups on the card
+        is checked against the steps of those build-ups, which is the number a reader is
+        choosing on.
+        """
+        for entry in self.catalogue()["scenarios"]:
+            with self.subTest(key=entry["key"]):
+                response = self.client.get(f"/api/replay?seed={entry['seed']}&fault=none")
+                self.assertEqual(response.status_code, 200)
+                doc = response.json()
+                self.assertEqual(doc["seed"], entry["seed"])
+                self.assertEqual(doc["home"], entry["home"])
+                self.assertEqual(doc["away"], entry["away"])
+                # Through the goal list, not the score field: this is the list the page's
+                # own scoreboard is rebuilt from, so the two agreeing is the claim.
+                self.assertEqual(sorted(g["minute"] for g in doc["goals"]), sorted(entry["minutes"]))
+                # One build-up per goal: a goal with no move to draw is a goal on this
+                # card that opens an empty panel when the match is running.
+                self.assertEqual(len(doc["highlights"]), entry["goals"])
+                self.assertEqual(
+                    sorted(h["minute"] for h in doc["highlights"]),
+                    sorted(entry["minutes"]),
+                )
+                self.assertEqual(
+                    sum(1 for h in doc["highlights"] if len(h["steps"]) >= 5),
+                    entry["long_build_ups"],
+                )
+
+    def test_the_catalogue_is_measured_once_per_process(self) -> None:
+        """It costs about a second, and re-measuring it per request would be a second of
+        empty sphere every time somebody opened the page. The cache is cleared around the
+        check so it tests the caching rather than the order this class ran in."""
+        from pitchframe.overlay import server as server_module
+
+        server_module._catalogue_document.cache_clear()
+        try:
+            with mock.patch.object(server_module, "catalogue", return_value=[]) as measured:
+                self.client.get("/api/scenarios")
+                self.client.get("/api/scenarios")
+                self.assertEqual(measured.call_count, 1)
+        finally:
+            server_module._catalogue_document.cache_clear()
+
+    def test_a_server_whose_code_has_moved_on_refuses_the_catalogue(self) -> None:
+        """A catalogue built from stale modules names seeds this process would build
+        differently, so it is the one answer that must not be given: the cards would open
+        matches that are not the ones they described."""
+        from pitchframe.overlay import server as server_module
+        from pitchframe.overlay.stale import CodeState
+
+        moved_on = CodeState(loaded="aaa", current="bbb", changed=("pitchframe/scenarios.py",))
+        with mock.patch.object(server_module, "code_state", return_value=moved_on):
+            response = self.client.get("/api/scenarios")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("pitchframe/scenarios.py", response.json()["detail"])
+
+    def test_the_page_is_served_at_the_front_door_and_the_demo_is_gone(self) -> None:
+        """One page for one job. The placeholder that stood here described a component that
+        had not been copied in yet; leaving it served beside the real page would be two
+        documents claiming to be the mode browser, one of them a mock-up."""
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response.headers["content-type"])
+        self.assertEqual(self.client.get("/infinite-menu-demo.html").status_code, 404)
+
+    def test_the_address_it_used_to_live_at_still_leads_there(self) -> None:
+        """A link already handed out is a link somebody has. It redirects rather than
+        serving a second copy, so there is one canonical address for the page — and the
+        hop is uncached, so a later change of address cannot be missed by a browser that
+        kept the old one."""
+        response = self.client.get("/mode-browser", follow_redirects=False)
+        self.assertIn(response.status_code, (307, 308))
+        self.assertEqual(response.headers["location"], "/")
+        self.assertEqual(response.headers.get("cache-control"), "no-store")
+        followed = self.client.get("/mode-browser")
+        self.assertEqual(followed.status_code, 200)
+        self.assertIn("data-mode-browser", followed.text)
+
+    def test_the_page_offers_a_stage_and_the_module_fills_it(self) -> None:
+        """The page's own markup cannot show that anything was built into it: the div is
+        there either way. So the marker and the module that reads it are both required."""
+        body = self.client.get("/").text
+        self.assertIn("data-mode-browser", body)
+        self.assertIn('id="mb-status"', body)
+        self.assertIn('type="module" src="/static/mode-browser.js"', body)
+        module = self.client.get("/static/mode-browser.js").text
+        self.assertIn('document.querySelector("[data-mode-browser]")', module)
+        self.assertIn("createInfiniteMenu(", module)
+
+    def test_the_page_composes_its_cards_from_the_endpoint(self) -> None:
+        """A catalogue fetched is a catalogue that cannot drift; a catalogue typed into a
+        script is one that silently will. Nothing here may be the registry's own words."""
+        module = self.client.get("/static/mode-browser.js").text
+        self.assertIn('fetch("/api/scenarios"', module)
+        for key in ALL_SCENARIOS:
+            with self.subTest(key=key):
+                self.assertNotIn(f'"{key}"', module, "the page carries its own copy of a scenario")
+
+    def test_a_card_opens_the_match_it_names(self) -> None:
+        """The one thing the sphere is for. The card links to the address the catalogue
+        carries for that match — the browser composes no URL of its own, it follows one the
+        server built — and a tile click goes through the same door as the card's link."""
+        module = self.client.get("/static/mode-browser.js").text
+        self.assertIn("entry.path", module)
+        self.assertIn("location.assign(item.href)", module)
+        self.assertIn('open.href = entry.href', module)
+        self.assertNotIn("/match?seed=", module, "the page is composing URLs again")
+
+    def test_the_sphere_says_which_of_the_two_it_built(self) -> None:
+        """WebGL2 is not universal, and the fallback is a real path rather than a message:
+        the same items, in a list, each one a click from the same replay. The page reports
+        which of the two is on screen, so the list cannot be mistaken for the design."""
+        module = self.client.get("/static/mode-browser.js").text
+        self.assertIn("menu.fallback", module)
+        port = self.client.get("/static/infinite-menu.js").text
+        self.assertIn("infinite-menu__fallback", port)
+        self.assertIn("fallback: !engine", port)
+
+    def test_the_arrow_keys_are_answered_wherever_a_reader_is(self) -> None:
+        """The page prints "Arrow keys step" the moment it opens — before the reader has
+        clicked or tabbed into anything — so the keys cannot wait for the sphere's own
+        element to be focused: nothing focuses it on arrival, and the promise would be false
+        until the reader guessed to press Tab. They are answered on the document instead,
+        with the guard the feed's key handler already uses, so a key aimed at a control
+        still belongs to that control. The listener is also required to come back off on
+        destroy: a handler left on the document outlives the sphere it moves.
+        """
+        port = self.client.get("/static/infinite-menu.js").text
+        self.assertIn('document.addEventListener("keydown", onKeyDown)', port)
+        self.assertIn('document.removeEventListener("keydown", onKeyDown)', port)
+        self.assertNotIn('root.addEventListener("keydown"', port)
+        self.assertIn("target.isContentEditable", port)
+
+    def test_each_page_says_where_the_other_one_is(self) -> None:
+        """A reader who lands on a match has to be able to get back to the choice, and a
+        reader on the sphere has to be able to leave for the match they are looking at. The
+        feed's way back is a link a reader can see, not only an alternate-document hint,
+        and each page's link is checked against the other page's address rather than against
+        the string it happens to contain."""
+        feed = self.client.get("/match").text
+        self.assertIn('href="/"', feed)
+        self.assertIn('rel="alternate" href="/"', feed)
+
+        front = self.client.get("/").text
+        self.assertIn('href="/match"', front)
+
+        # And no page still points at the address the front door moved away from.
+        for body in (feed, front):
+            with self.subTest(page=body[:40]):
+                self.assertNotIn('href="/mode-browser"', body)
+
+    def test_nothing_served_to_the_browser_page_may_be_kept(self) -> None:
+        """The same rule as the feed's: a browser holding yesterday's script draws
+        yesterday's cards against today's catalogue."""
+        for path in ("/mode-browser", "/static/mode-browser.js", "/api/scenarios"):
+            with self.subTest(path=path):
+                self.assertEqual(
+                    self.client.get(path).headers.get("cache-control"), "no-store"
+                )
+
+
+class TestTheRatingsPanel(unittest.TestCase):
+    """The marks, the man of the match, and the clock that decides when it is named.
+
+    Three things have to hold for the panel to be honest rather than decorative: the
+    payload has to carry a mark for every player in its own squads, the page has to draw
+    them from that roster rather than from a list of its own, and the award has to be
+    withheld until the replay has been played out — a man of the match named on the first
+    frame would spoil the replay the whole page exists to show, exactly as printing the
+    final score would.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.client = TestClient(create_app())
+
+    def page(self) -> str:
+        return self.client.get("/match").text
+
+    def app(self) -> str:
+        return self.client.get("/static/app.js").text
+
+    def test_the_panel_is_on_the_page_and_the_page_fills_it(self) -> None:
+        """A container nothing writes to is a control that is not there."""
+        body = self.page()
+        app = self.app()
+        for marker, attribute in (
+            ("ratings-list", 'id="ratings-list"'),
+            ("ratings-window", 'id="ratings-window"'),
+            ("award", 'id="award"'),
+            ("award-name", 'id="award-name"'),
+            ("award-text", 'id="award-text"'),
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(attribute, body)
+                self.assertIn(f'"{marker}"', app)
+
+    def test_every_player_in_the_payload_squads_has_a_mark(self) -> None:
+        """The panel joins the frame's marks against the roster the payload carries.
+        A player the ratings forgot would be a nameless row or a missing one, and a
+        rating for an id that is not in either squad would be drawn nowhere."""
+        doc = replay_doc()
+        roster = [
+            player["id"] for side in ("home", "away") for player in doc["squads"][side]
+        ]
+        self.assertTrue(roster)
+        for frame in doc["frames"]:
+            with self.subTest(clock=frame["clock"]):
+                rated = frame["ratings"]["values"]
+                self.assertEqual(sorted(rated), sorted(roster))
+                for player_id, value in rated.items():
+                    self.assertGreaterEqual(value, 1.0)
+                    self.assertLessEqual(value, 10.0)
+
+    def test_a_frame_only_rates_what_its_clock_has_reached(self) -> None:
+        """A mark that already counted a goal from a later window would put a number on
+        the page the scoreboard disagrees with. The fixture is the default scenario, whose
+        first goal is early enough to leave frames before it."""
+        doc = replay_doc()
+        frames = doc["frames"]
+        # A goal in the middle of the replay, so there is a frame from before it and a
+        # frame from after it to compare.
+        goal = doc["goals"][-1]
+        self.assertGreater(goal["clock"], frames[0]["clock"])
+        # A goal names its scorer and not their id, and a name on its own is not unique
+        # across two squads: the side is what makes it a player.
+        scorer = next(
+            player
+            for player in doc["squads"][goal["team"]]
+            if player["name"] == goal["player"]
+        )
+        before = frame_before(frames, goal["clock"])["ratings"]["values"][scorer["id"]]
+        after = frames[-1]["ratings"]["values"][scorer["id"]]
+        self.assertLess(before, after)
+
+    def test_the_award_is_one_for_the_whole_match_and_not_a_frame_of_it(self) -> None:
+        """The payload is the finished script and the page is what withholds it, and the
+        difference is load-bearing: **no frame carries an award at all**, so the page
+        cannot read a partial one however it tries. Cut the other way — an award computed
+        as the replay runs — the page would have to decide when a match is over, and any
+        truncated replay would name a man of the match for a match it never reached.
+
+        That is also why the award's rating is *not* the last frame's value for the same
+        player: the mark at 25 minutes is the mark the first twenty-five minutes produced,
+        and the award is for the match."""
+        doc = replay_doc()
+        for frame in doc["frames"]:
+            with self.subTest(clock=frame["clock"]):
+                self.assertNotIn("award", frame["ratings"])
+
+        block = doc["ratings"]
+        self.assertEqual(block["decided_at"], doc["frames"][-1]["clock"])
+        self.assertEqual(block["labels"], list(LABELS))
+        award = block["award"]
+        self.assertIsNotNone(award)
+        self.assertTrue(award["reasons"])
+        self.assertGreater(award["rating"], max(doc["frames"][-1]["ratings"]["values"].values()))
+        self.assertIn("The match finished", award["conclusion"])
+
+    def test_the_page_holds_the_award_until_the_clock_reaches_it(self) -> None:
+        """The rule the panel states in its own note, as the comparison that implements
+        it: the award is drawn only once, and only from ``decided_at``."""
+        app = self.app()
+        self.assertIn("state.clock >= block.decided_at", app)
+        self.assertIn("doc.ratings", app)
+        self.assertIn('el.awardText.textContent = award.conclusion', app)
+
+    def test_the_mark_is_not_rounded_by_the_page(self) -> None:
+        """One decimal is what a rating is; a page that rounded it again would print a
+        different number from the one the payload carries and the receipts quote."""
+        self.assertIn("player.rating.toFixed(1)", self.app())
+
+    def test_the_panel_says_where_its_numbers_come_from(self) -> None:
+        """Every figure on this page states its provenance, and a rating is the one
+        number here that is a judgement rather than a measurement: the label has to say
+        it was computed rather than awarded. It travels in the payload the way the
+        build-up panel's labels do, so a view cannot compose a label of its own."""
+        self.assertIn("ratings computed, not awarded", replay_doc()["ratings"]["labels"])
+        self.assertIn("id=\"ratings-labels\"", self.page())
+        self.assertIn("doc.ratings && doc.ratings.labels", self.app())
+
+
+class TestTheLauncher(unittest.TestCase):
+    """The sling pad that opens the build-up panel.
+
+    The panel used to be reachable only from a goal row and from the dock's menu, both of
+    which exist only once the replay has scored — so on a match whose first goal is late,
+    the feature looked broken for most of the replay. This is the control that is always
+    on the page, and these are the ways it could stop being one.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.client = TestClient(create_app())
+
+    def page(self) -> str:
+        return self.client.get("/match").text
+
+    def app(self) -> str:
+        return self.client.get("/static/app.js").text
+
+    def test_the_page_has_a_host_for_the_pad_and_fills_it(self) -> None:
+        """An empty div is a control that is not there."""
+        self.assertIn('id="sling"', self.page())
+        self.assertIn("createSlingButton(el.sling", self.app())
+
+    def test_the_pad_is_a_port_and_imported_as_one(self) -> None:
+        """A pad drawn inline in app.js would be a second copy of a component whose
+        notice has to travel with it."""
+        app = self.app()
+        self.assertIn('import { createSlingButton } from "./sling-button.js";', app)
+        self.assertEqual(self.client.get("/static/sling-button.js").status_code, 200)
+
+    def test_the_launcher_names_what_it_would_open(self) -> None:
+        """A pad whose label does not change is a pad the reader cannot tell is waiting
+        for a goal — which is the report this control answers."""
+        body = self.page()
+        app = self.app()
+        for marker in ("launch-title", "launch-note"):
+            with self.subTest(marker=marker):
+                self.assertIn(f'id="{marker}"', body)
+                self.assertIn(f'"{marker}"', app)
+
+    def test_the_pad_is_disabled_while_it_has_nothing_to_open(self) -> None:
+        """A control that looks live and does nothing when pulled reads as broken. The port
+        dims itself for `disabled`, and the page is what decides when that is."""
+        app = self.app()
+        self.assertIn("disabled:", app)
+        self.assertIn("sling.set({", app)
+        self.assertIn("launchNote", app)
 
 
 @requires_server

@@ -39,7 +39,9 @@ from ..claims import Claim, baseline_window_for
 from ..generator import generate_match
 from ..highlights import build_highlights
 from ..llm.provider import select_tier
-from ..schema import Match, MatchEvent, Squad
+from ..ratings import ratings_frame, ratings_payload
+from ..scenarios import DEFAULT_SEED
+from ..schema import Match, MatchEvent, Squad, Team
 from ..stats import Window
 from .commentary import compose, incident_clause
 
@@ -152,6 +154,11 @@ class Frame:
     incidents: tuple[Incident, ...]
     #: Running totals after this frame.
     ledger: dict[str, int]
+    #: Every player's rating as of this frame's clock, plus who led. Computed from the
+    #: events up to that clock and nothing later, so the panel is as honest about time
+    #: as the claim above it: a rating on screen at 60 minutes is the rating the first
+    #: 60 minutes produced, not the one the match ended with.
+    ratings: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +187,12 @@ class Replay:
     #: panel only ever opens on a goal the replay has already reached, so this reveals
     #: nothing about the future.
     highlights: tuple[dict[str, Any], ...]
+    #: The ratings block: the labels, the clock at which the award is made, and the man
+    #: of the match with the paragraph about them. The award covers the whole match, so
+    #: the page holds it back until the replay reaches ``decided_at`` — the same rule the
+    #: goal list follows, where the payload is the finished script and the page is the
+    #: only thing that decides what a reader has earned the right to see yet.
+    ratings: dict[str, Any]
 
     @property
     def duration(self) -> int:
@@ -386,7 +399,7 @@ def _squad_payload(squad: Squad) -> list[dict[str, Any]]:
 
 
 def build_replay(
-    seed: int = 7,
+    seed: int = DEFAULT_SEED,
     match_id: str = "PF-001",
     *,
     window_seconds: int = DEFAULT_WINDOW_SECONDS,
@@ -398,7 +411,12 @@ def build_replay(
     """Run the loop across a whole match and record every frame.
 
     Args:
-        seed: the match seed. Everything downstream is a function of this.
+        seed: the match seed. Everything downstream is a function of this. The default
+            is the seed behind :data:`pitchframe.scenarios.DEFAULT_SCENARIO` — five
+            goals, four of them from moves long enough to draw on the build-up panel —
+            because an overlay that opens on a match with nothing to show reads as
+            broken however correct it is. ``scenarios.SCENARIOS['quiet'].seed`` is the
+            single-goal match, and ``--seed`` still takes any number at all.
         match_id: identifier used in generated event ids.
         window_seconds: length of each analysed window.
         first_window_start: where the first window begins; must leave room for a
@@ -433,6 +451,7 @@ def build_replay(
 
     match: Match = generate_match(seed, match_id)
     home, away = match.home.name, match.away.name
+    squads: dict[Team, Squad] = {"home": match.home, "away": match.away}
     windows = _windows_for(match.events, window_seconds, first_window_start)
     if max_frames is not None:
         windows = windows[:max_frames]
@@ -473,6 +492,7 @@ def build_replay(
         for key in ledger:
             ledger[key] += counts.get(key, 0)
 
+        frame_score = _score_at(events_so_far, window[1])
         frames.append(
             Frame(
                 index=index,
@@ -480,11 +500,14 @@ def build_replay(
                 minute=window[1] // 60,
                 window=window,
                 baseline=baseline,
-                score=_score_at(events_so_far, window[1]),
+                score=frame_score,
                 feed=rows,
                 readings=_readings(snapshot(events_so_far, window, baseline)),
                 incidents=incidents,
                 ledger=dict(ledger),
+                ratings=ratings_frame(
+                    events_so_far, squads, score=frame_score, clock=window[1]
+                ),
             )
         )
 
@@ -520,5 +543,16 @@ def build_replay(
         highlights=tuple(
             highlight.to_dict()
             for highlight in build_highlights(match.events, seed=seed, until=final_clock)
+        ),
+        # Rated over the whole match, and withheld by the page until the replay reaches
+        # ``decided_at``: naming a man of the match before the match has been played out
+        # would spoil the replay exactly as printing the final score would.
+        ratings=ratings_payload(
+            match.events,
+            squads,
+            home=home,
+            away=away,
+            score=_score_at(match.events, final_clock),
+            decided_at=final_clock,
         ),
     )

@@ -12,9 +12,19 @@ import argparse
 import asyncio
 import json
 import sys
+import threading
+import time
+import webbrowser
 from collections.abc import Sequence
 
 from .generator import generate_match
+from .scenarios import (
+    ALL_SCENARIOS,
+    DEFAULT_SCENARIO_KEY,
+    SCENARIOS,
+    describe as describe_scenarios,
+    scenario as scenario_for,
+)
 from .schema import Match, MatchEvent
 from .stats import (
     chaos_index,
@@ -162,7 +172,7 @@ def _report_providers() -> int:
     return 0
 
 
-def _run_claims(args: argparse.Namespace) -> int:
+def _run_claims(args: argparse.Namespace, seed: int) -> int:
     """Run one window through the propose, verify and retry loop.
 
     Uses the model-free narrator and verifier in :mod:`pitchframe.agents.demo`, so
@@ -182,7 +192,7 @@ def _run_claims(args: argparse.Namespace) -> int:
         print(f"error: --window must be start:end seconds ({exc})", file=sys.stderr)
         return 2
 
-    match = generate_match(args.seed, args.match_id)
+    match = generate_match(seed, args.match_id)
     narrator = InjectingNarrator(fault=args.inject_fault)
     result = asyncio.run(
         run_pipeline(narrator, RuleVerifier(), match.events, window, baseline)
@@ -229,7 +239,64 @@ def _run_claims(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_overlay(args: argparse.Namespace) -> int:
+def serving_here(host: str, port: int, timeout: float = 2.0) -> str | None:
+    """What is answering on this address, if anything.
+
+    ``ok`` for this project's own overlay, ``stale`` for one that has outlived the files it
+    was started from, ``taken`` for something else on the port, and ``None`` for nothing.
+
+    The launcher is run by double-click, and a double-click cannot be asked a question — so
+    the three states a second start can find have to be told apart here rather than by the
+    reader. Starting a second server regardless would fail with ``address already in use``,
+    which says nothing about the real problem, and would leave the reader to work out why.
+    """
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/api/health", timeout=timeout) as response:
+            body = response.read()
+    except urllib.error.HTTPError:
+        # Something is listening and answered, and it is not this probe's endpoint.
+        return "taken"
+    except (urllib.error.URLError, OSError):
+        return None
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return "taken"
+    if not isinstance(payload, dict) or "status" not in payload:
+        return "taken"
+    return "stale" if payload.get("code", {}).get("stale") else "ok"
+
+
+def open_when_ready(url: str, host: str, port: int, timeout: float = 20.0) -> threading.Thread:
+    """Open ``url`` in the default browser as soon as the server answers it.
+
+    A thread rather than a call before ``uvicorn.run``: opening the browser first is a race
+    the browser loses — a tab that loads loopback before anything is listening shows a
+    connection error, and the reader is left reloading a page whose server was about to be
+    ready. Polling the readiness probe the server already has costs one thread and removes
+    the race.
+    """
+    def wait() -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if serving_here(host, port, timeout=1.0) is not None:
+                webbrowser.open(url)
+                return
+            time.sleep(0.25)
+        print(
+            f"  the browser was not opened: nothing answered on {url} within "
+            f"{timeout:.0f} seconds"
+        )
+
+    thread = threading.Thread(target=wait, name="pitchframe-open", daemon=True)
+    thread.start()
+    return thread
+
+
+def _run_overlay(args: argparse.Namespace, seed: int, scenario_key: str) -> int:
     """Serve the live overlay.
 
     The dependency check happens here rather than at import time so that every other
@@ -247,15 +314,48 @@ def _run_overlay(args: argparse.Namespace) -> int:
         return 2
 
     from .overlay.server import create_app
+    from .overlay.stale import RESTART_COMMAND
 
-    url = (
-        f"http://{args.host}:{args.port}/"
-        f"?seed={args.seed}&fault={args.inject_fault}"
-    )
+    chosen = scenario_for(scenario_key)
+    root = f"http://{args.host}:{args.port}"
+    # Two addresses, because the overlay is two pages: the front door is the catalogue, and
+    # a match is a path under it. The match is printed under its own name rather than as a
+    # seed — the same address a card on the catalogue leads to, and the one a reader can
+    # type back later without a number they would have to write down. A `--seed` that no
+    # scenario owns has no name, so it is printed the way it was asked for.
+    catalogue = f"{root}/"
+    # Asked for by name when the seed is that scenario's own, and by number otherwise: a
+    # `--seed 99` names no match, and printing `/match/matchday` for it would be a link to a
+    # different match than the one this server is about to serve.
+    match = (
+        f"{root}/match/{chosen.key}" if seed == chosen.seed else f"{root}/match?seed={seed}"
+    ) + ("" if args.inject_fault == "none" else f"?fault={args.inject_fault}")
+
     print("Pitchframe overlay")
-    print(f"  {url}")
+    print(f"  scenario {chosen.key} — {chosen.note}")
+
+    # Whether this call is the one that serves, or the one that finds a server already up.
+    serving = serving_here(args.host, args.port)
+    if serving == "stale":
+        print(f"  a server is already running at {root}, and it is older than the files here.")
+        print(f"  nothing it answers can be trusted until it restarts ({RESTART_COMMAND}).")
+        return 2
+    if serving == "taken":
+        print(f"  something else is answering on {root}, and it is not Pitchframe.")
+        print(f"  choose another port: python -m pitchframe --overlay --open --port 8010")
+        return 2
+    if serving == "ok":
+        print(f"  already running: {catalogue}")
+        if args.open:
+            webbrowser.open(catalogue)
+        return 0
+
+    print(f"  {catalogue}   the catalogue — every named match, as a sphere")
+    print(f"  {match}   this one directly")
     print(f"  fault={args.inject_fault}  (use fault=none in the URL for the honest baseline)")
     print("  Ctrl+C to stop")
+    if args.open:
+        open_when_ready(catalogue, args.host, args.port)
     uvicorn.run(create_app(), host=args.host, port=args.port, log_level="warning")
     return 0
 
@@ -265,7 +365,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         prog="python -m pitchframe",
         description="Generate a synthetic match and print its analytics summary.",
     )
-    parser.add_argument("--seed", type=int, default=7, help="seed for the match simulation (default: 7)")
+    parser.add_argument(
+        "--scenario",
+        default=DEFAULT_SCENARIO_KEY,
+        choices=sorted(ALL_SCENARIOS),
+        # The whole catalogue, not just the three named showcase matches: ``--scenarios``
+        # lists every one of them, and a banner that offered a name the parser then
+        # refused would be a list of instructions that did not work.
+        help="which named match to use when --seed is not given (default: "
+        f"{DEFAULT_SCENARIO_KEY}; --scenarios lists them all)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="seed for the match simulation (default: the scenario's seed, "
+        f"{SCENARIOS[DEFAULT_SCENARIO_KEY].seed})",
+    )
+    parser.add_argument(
+        "--scenarios",
+        action="store_true",
+        dest="list_scenarios",
+        help="list the named matches and their contents, then exit",
+    )
     parser.add_argument("--match-id", default="PF-001", help="match identifier used in event ids")
     parser.add_argument("--moments", type=int, default=5, help="how many key moments to list")
     parser.add_argument("--json", action="store_true", dest="as_json", help="emit machine-readable JSON")
@@ -296,6 +418,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="serve the live overlay in a browser (needs fastapi and uvicorn)",
     )
     parser.add_argument(
+        "--open",
+        action="store_true",
+        help="with --overlay: open the catalogue in the default browser once it answers",
+    )
+    parser.add_argument(
         "--host",
         default="127.0.0.1",
         help="interface for --overlay (default: 127.0.0.1, loopback only)",
@@ -318,13 +445,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.providers:
         return _report_providers()
 
+    chosen = scenario_for(args.scenario)
+    # An explicit --seed wins over the scenario's, so every command keeps taking any
+    # match at all and "the named match" is only ever the default.
+    seed = args.seed if args.seed is not None else chosen.seed
+
+    if args.list_scenarios:
+        print("Named matches:\n")
+        print(describe_scenarios())
+        print("\nPass --seed to open any other match, or --scenario <name> to open one of the above.")
+        return 0
+
     if args.overlay:
-        return _run_overlay(args)
+        return _run_overlay(args, seed, args.scenario)
 
     if args.claims:
-        return _run_claims(args)
+        return _run_claims(args, seed)
 
-    match = generate_match(args.seed, args.match_id)
+    match = generate_match(seed, args.match_id)
     summary = summarise(match, args.moments)
 
     if args.as_json:

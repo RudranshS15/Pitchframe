@@ -6,6 +6,12 @@
 
 * text=auto eol=lf
 
+# Batch files are the one text format here that is not line-ending agnostic: cmd.exe
+# reads them with labels and `goto`, and an LF-only file can fail on those. The repository
+# still stores LF like everything else; a checkout gives this file CRLF, which is what
+# Windows expects a .cmd to be.
+*.cmd text eol=crlf
+
 # Binary assets must never be line-ending converted.
 *.png binary
 *.jpg binary

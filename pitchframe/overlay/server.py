@@ -29,12 +29,19 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from ..agents.demo import FAULT_MODES
+from ..scenarios import (
+    ALL_SCENARIOS,
+    DEFAULT_SCENARIO_KEY,
+    DEFAULT_SEED,
+    catalogue,
+)
 from .replay import (
     DEFAULT_FIRST_WINDOW_START,
     DEFAULT_WINDOW_SECONDS,
@@ -67,6 +74,73 @@ def _replay_document(
         fault=fault,
         max_frames=max_frames,
     ).to_dict()
+
+
+@lru_cache(maxsize=1)
+def _catalogue_document() -> dict[str, Any]:
+    """The named matches, built once per process.
+
+    Cached for the same reason a replay is: the answer is a pure function of source
+    that does not change while the process lives. Measuring the whole catalogue costs
+    about a second, which is a second a reader would otherwise spend staring at an
+    empty sphere every time they opened the mode browser, and there is nothing to
+    gain by measuring it again -- :func:`pitchframe.overlay.stale.code_state` is what
+    notices when the source it came from has moved on.
+    """
+    entries = catalogue()
+    # The address of each match is added here rather than in `pitchframe.scenarios`, which
+    # knows about matches and nothing about HTTP: a catalogue entry that carried its own
+    # path would make a registry module the second place a route is decided, and the first
+    # time a route moved the catalogue would be serving the old one.
+    for entry in entries:
+        entry["path"] = f"/match/{entry['key']}"
+    return {"count": len(entries), "scenarios": entries}
+
+
+def _seed_for(scenario_key: str) -> int:
+    """The seed behind a named match, or a 400 that lists the names there are.
+
+    A name is a seed with a reason attached, so this is the one place the two are
+    interchangeable. An unknown name is refused rather than falling back to the default:
+    a typo that quietly served a different match would look exactly like a match nobody
+    wanted, which is the failure :func:`pitchframe.scenarios.scenario` exists to prevent
+    on the command line.
+    """
+    entry = ALL_SCENARIOS.get(scenario_key)
+    if entry is None:
+        known = ", ".join(sorted(ALL_SCENARIOS))
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown match {scenario_key!r}; named matches are: {known}",
+        )
+    return entry.seed
+
+
+def _named(key: str, request: Request) -> RedirectResponse:
+    """Send a numbered address to the name of that match, keeping everything else.
+
+    A link already handed out keeps working; what it lands on is the address that says
+    which match it is, and the rest of the query string — the view, the second, the open
+    build-up, the fault — travels with it, because those describe the frame and not the
+    match. ``seed`` itself is dropped: it is the thing the name replaces, and a URL that
+    carried both would be two descriptions of one match.
+    """
+    rest = [(name, value) for name, value in request.query_params.multi_items() if name != "seed"]
+    query = urlencode(rest)
+    return RedirectResponse(f"/match/{key}" + (f"?{query}" if query else ""), status_code=308)
+
+
+def _require_current_code() -> None:
+    """Refuse to answer from modules that have outlived their source.
+
+    Both documents below are built from imported modules, so both go wrong in the same
+    way after an edit: the process answers from what it loaded while the files describe
+    something else. The catalogue has one extra edge -- it names matches by seed, so a
+    stale one could offer a card whose replay this process would build differently.
+    """
+    state = code_state()
+    if state.is_stale:
+        raise HTTPException(status_code=503, detail=state.message())
 
 
 def _validate(seed: int, fault: str, window_seconds: int, max_frames: int | None) -> None:
@@ -114,17 +188,85 @@ def create_app() -> FastAPI:
 
     @application.get("/", include_in_schema=False)
     def index() -> FileResponse:
+        """The mode browser: the catalogue as a sphere, and the front door.
+
+        The choice comes before the thing chosen. This used to be the feed, with the
+        catalogue one link away — which meant the first thing a reader met was one match
+        they had not picked, and the eighteen others had to be found. Opening on the sphere
+        puts the choice where the reader starts, and every card on it leads to a match.
+        """
         return FileResponse(_STATIC_DIR / "index.html")
+
+    @application.get("/match", include_in_schema=False)
+    def match(request: Request) -> Response:
+        """The feed: one match, replays measured and every published line checked.
+
+        A path rather than a query parameter on the front door, because the two pages do
+        different jobs and are addressed differently: this one is a *frame* of one replay
+        — the view, the match second and the open build-up all belong in its query string,
+        and they are what a reader shares. The front door has no frame to share and no
+        seed until a card is clicked.
+
+        Which match is in the path and not in the query, so that a link says what it is:
+        ``/match/quiet`` rather than ``/match?seed=7``. Nothing gaps there — a bare
+        ``/match`` goes to the default scenario's name, and a numbered address that names
+        a catalogued match is redirected to its name, so every link this server serves
+        ends up at one address per match. A seed that is not in the catalogue has no name
+        to go to and is served as it always was: ``/match?seed=99`` still opens a match,
+        which is the promise that made ``--seed`` worth having.
+        """
+        numbered = request.query_params.get("seed")
+        if numbered is None:
+            return RedirectResponse(f"/match/{DEFAULT_SCENARIO_KEY}", status_code=308)
+        try:
+            seed = int(numbered)
+        except ValueError:
+            return FileResponse(_STATIC_DIR / "match.html")
+        for key, entry in ALL_SCENARIOS.items():
+            if entry.seed == seed:
+                return _named(key, request)
+        return FileResponse(_STATIC_DIR / "match.html")
+
+    @application.get("/match/{key}", include_in_schema=False)
+    def named_match(key: str) -> FileResponse:
+        """One named match, at the address that names it.
+
+        The key is checked here rather than in the page, because a page that was served
+        for a name it cannot resolve would fetch nothing and report it as a network
+        failure: the server knows the catalogue, so an unknown name is a 404 naming the
+        ones there are, and the reader is one link from a match instead of one mystery.
+        """
+        if key not in ALL_SCENARIOS:
+            known = ", ".join(sorted(ALL_SCENARIOS))
+            raise HTTPException(
+                status_code=404,
+                detail=f"unknown match {key!r}; named matches are: {known}. "
+                "Any seed still opens a match: /match?seed=<number>",
+            )
+        return FileResponse(_STATIC_DIR / "match.html")
 
     @application.get("/api/replay")
     def replay(
-        seed: int = 7,
+        scenario: str | None = None,
+        seed: int | None = None,
         match_id: str = "PF-001",
         fault: str = "none",
         window_seconds: int = DEFAULT_WINDOW_SECONDS,
         max_frames: int | None = None,
     ) -> dict[str, Any]:
         """The whole script for one match: every frame, claim and verdict.
+
+        A match can be asked for by name (``scenario=matchday``) or by number
+        (``seed=28``), and both reach the same replay, because a name *is* a seed with a
+        reason attached. Asking for both is refused rather than resolved: they can name
+        different matches, and a page that sent both would be asking for two matches at
+        once, which is a request whose answer is a coin toss.
+
+        ``seed`` defaults to the seed of the default scenario rather than to a number
+        chosen here: the page does not send one until it has been given one, so a bare
+        ``/`` and a bare ``/api/replay`` both open the multi-goal match the overlay is
+        meant to be shown on. Any seed at all is still accepted — the scenario is a
+        default, not a restriction.
 
         ``fault=none`` is the honest baseline. ``fault=narrator-invert`` plants one
         wrong direction per window so the catch is visible; the planted rows carry
@@ -135,11 +277,41 @@ def create_app() -> FastAPI:
         the page already surfaces the server's ``detail`` when a request fails, so an
         out-of-date process says so in place of quietly answering with old numbers.
         """
+        if scenario is not None and seed is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="give either scenario or seed, not both: they can name different matches",
+            )
+        if scenario is not None:
+            seed = _seed_for(scenario)
+        elif seed is None:
+            seed = DEFAULT_SEED
+
         _validate(seed, fault, window_seconds, max_frames)
-        state = code_state()
-        if state.is_stale:
-            raise HTTPException(status_code=503, detail=state.message())
+        _require_current_code()
         return _replay_document(seed, match_id, fault, window_seconds, max_frames)
+
+    @application.get("/api/scenarios")
+    def scenarios() -> dict[str, Any]:
+        """Every named match, with what each one contains, for the mode browser.
+
+        The sphere the mode browser draws is a card per scenario, and each card carries
+        both the seed that opens the match behind it and the ``path`` that names it. That
+        pair is the whole interface: the browser navigates to the card's own address, the
+        page asks for it by name, and the overlay replays what it always replays — so
+        browsing the catalogue measures nothing new and a card cannot open a match the
+        replay endpoint would not also serve. The path is composed here rather than in
+        JavaScript for the same reason the rest of the entry is: an address is a fact
+        about the catalogue, and a page that built one from a key would be a second place
+        where the site's URLs are decided.
+
+        Served from here rather than from a list written into the page for the reason
+        :mod:`pitchframe.scenarios` gives for existing at all: a second copy of the
+        catalogue in JavaScript is a copy that drifts, and the notes on these cards are
+        the thing a reader chooses by.
+        """
+        _require_current_code()
+        return _catalogue_document()
 
     @application.get("/api/health")
     def health() -> dict[str, Any]:
@@ -148,6 +320,7 @@ def create_app() -> FastAPI:
         return {
             "status": "ok",
             "faults": list(FAULT_MODES),
+            "default_seed": DEFAULT_SEED,
             "window_seconds": DEFAULT_WINDOW_SECONDS,
             "first_window_start": DEFAULT_FIRST_WINDOW_START,
             # Hashes rather than versions: there is no version, and the question this
@@ -161,6 +334,19 @@ def create_app() -> FastAPI:
         }
 
     application.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+
+    @application.get("/mode-browser", include_in_schema=False)
+    def mode_browser() -> RedirectResponse:
+        """Where the front door used to be, still working for anyone holding a link.
+
+        A redirect rather than a second copy of the page: two addresses for one document is
+        the same fault as two controls for one value — a reader who bookmarked the old one
+        would keep landing on a page this server does not consider canonical. The
+        middleware above sets ``no-store`` on it, so the browser cannot cache the hop and
+        miss a later change of address.
+        """
+        return RedirectResponse("/", status_code=308)
+
     return application
 
 

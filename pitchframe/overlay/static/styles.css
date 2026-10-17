@@ -24,11 +24,27 @@
   --amber:  #F5B841;   /* live, and planted faults */
   --home:   #2FD08A;
   --away:   #5E93C4;
+  /* The build-up launcher's hover, and the one deliberate exception to "green and
+     vermilion mean published and caught": the pad that opens a goal's build-up turns green
+     under the pointer and goes green on the keyboard's focus ring too. It is a named
+     token rather than a borrowed --verify so that the exception is visible in one place
+     instead of looking like a control that drifted into a verdict colour, and it is the
+     launcher's alone -- no other surface on the page reaches it. */
+  --launch-hover: #2FD08A;
   /* The sea behind the page, and the light caught on its crests. Named here rather than
      in the canvas code for the same reason everything else is: green and vermilion mean
      published and caught on this page, and scenery must not borrow either. */
   --slats:       #33207A;
   --slats-glint: #D9E2FF;
+  /* The light on a panel's boundary, and the mesh it is drawn from. Scenery like the sea,
+     and named here for the same reason: green and vermilion mean published and caught on
+     this page, and the two team colours are the other side of the wheel from both, so a
+     decoration must not borrow any of the four. Violet is the one family left that no
+     number, no verdict and no team on this page has claimed. */
+  --glow-hsl:  262 83% 70%;   /* the halo, as the port's own "H S L" triple */
+  --glow-one:  #3B2A86;       /* the mesh's three colours, in the order it places them */
+  --glow-two:  #7C5CFF;
+  --glow-three:#B9C8FF;
   --rule:   rgba(233, 239, 245, .10);
   --rule-hard: rgba(233, 239, 245, .18);
 
@@ -172,6 +188,27 @@ a.skip:focus {
 }
 
 .masthead__side { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
+
+/* The link out to the mode browser, which leads the view switch on the masthead rather
+   than sitting in the footer: choosing between matches is a thing a reader does before
+   they have one on screen, and a control they have to scroll to find is not one. It is a
+   link rather than a button because it leaves the page, which is the only honest shape for
+   it — the sphere is a different document with a different job. */
+.browse {
+  order: -1;
+  font-size: .68rem;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--flint);
+  border: 1px solid var(--rule-hard);
+  border-radius: var(--radius);
+  padding: .4rem .7rem;
+  transition: color .2s ease, border-color .2s ease;
+}
+
+.browse:hover { color: var(--chalk); border-color: var(--chalk); }
 
 .provider {
   display: inline-flex;
@@ -665,7 +702,7 @@ body[data-view="analyst"] .promo { display: none; }
 
 /* ------------------------------------------------------------------ the rail - */
 
-.ledger, .metrics, .squads {
+.ledger, .metrics, .ratings, .squads {  /* .ratings uses this treatment in the page column */
   background: var(--turf);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
@@ -749,6 +786,141 @@ body[data-view="analyst"] .promo { display: none; }
 
 .metrics__empty, .squads__note { font-size: .7rem; color: var(--flint); }
 
+/* ---- Ratings ---------------------------------------------------------------------- */
+
+/* A card in the page's own column, not in the rail: the fan view hides the rail, and the one
+   panel whose subject is who played well is the last thing that should be behind a view
+   switch. It is wide, so the squad lists in two columns and the award reads across.
+
+.ratings__window {
+  font-family: var(--mono);
+  font-size: .64rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* The panel's own provenance, straight from the payload — the same rule the build-up
+   panel's labels follow. */
+.ratings__labels { display: flex; flex-wrap: wrap; gap: .35rem; }
+
+.ratings__label {
+  font-family: var(--mono);
+  font-size: .6rem;
+  letter-spacing: .04em;
+  color: var(--flint);
+  border: 1px solid var(--rule-hard);
+  border-radius: 999px;
+  padding: .1rem .45rem;
+}
+
+/* Two columns at desktop width: a full squad is twenty-two rows, and this card sits above
+   the commentary rather than in the rail, so it is wide and should not be tall. Capped and
+   scrollable so a longer squad than this generator builds still fits. */
+.ratings__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 1.1rem;
+  align-content: start;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+@media (max-width: 1080px) {
+  .ratings__list { grid-template-columns: minmax(0, 1fr); }
+}
+
+.ratings__row {
+  display: grid;
+  grid-template-columns: 1.3rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: .5rem;
+  padding: .18rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.ratings__row:last-child { border-bottom: 0; }
+
+.ratings__shirt { font-family: var(--mono); font-size: .64rem; color: var(--flint); }
+
+.ratings__who {
+  display: flex;
+  align-items: baseline;
+  gap: .4rem;
+  min-width: 0;
+  font-size: .84rem;
+}
+
+.ratings__pos {
+  font-family: var(--mono);
+  font-size: .58rem;
+  letter-spacing: .06em;
+  color: var(--flint);
+}
+
+.ratings__mark {
+  font-family: var(--mono);
+  font-size: .84rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The leader is not a verdict and not a colour: it is the name that has been bolded, which
+   is how this page marks the reading a claim was about. */
+.ratings__row--leading .ratings__who { color: var(--chalk); font-weight: 600; }
+.ratings__row--leading .ratings__mark { color: var(--chalk); }
+
+.ratings__empty, .ratings__note { font-size: .7rem; color: var(--flint); }
+
+.award {
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+  padding: .75rem .85rem;
+  border: 1px solid var(--rule-hard);
+  border-radius: var(--radius);
+  background: rgba(233, 239, 245, .035);
+}
+
+.award__tag {
+  font-size: .62rem;
+  font-weight: 600;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+.award__who {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .6rem;
+}
+
+.award__who > span:first-child {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 1.15rem;
+  letter-spacing: .03em;
+}
+
+.award__mark {
+  font-family: var(--mono);
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.award__reasons { display: flex; flex-wrap: wrap; gap: .3rem; }
+
+.award__reason {
+  font-family: var(--mono);
+  font-size: .62rem;
+  color: var(--flint);
+  border: 1px solid var(--rule-hard);
+  border-radius: 2px;
+  padding: .05rem .35rem;
+}
+
+.award__text { font-size: .82rem; line-height: 1.5; text-wrap: pretty; }
+
 .squads__cols { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
 
 .squads__team h3 {
@@ -771,6 +943,43 @@ body[data-view="analyst"] .promo { display: none; }
 }
 
 .squads__shirt { font-family: var(--mono); color: var(--flint); font-size: .66rem; }
+
+/* The build-up launcher. The pad itself is a port (static/sling-button.js) and this is the
+   page's frame around it: the pad, then the sentence saying what pulling it would open.
+   The caption is written by the page from the payload's own goal list, so it cannot name a
+   goal the replay has not reached. */
+.launch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: .9rem;
+  border-top: 1px solid var(--rule);
+  padding-top: .85rem;
+}
+
+.launch__pad { display: flex; flex: none; }
+
+.launch__copy {
+  display: flex;
+  flex-direction: column;
+  gap: .12rem;
+  min-width: 0;
+}
+
+.launch__label {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: .95rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.launch__note {
+  font-family: var(--mono);
+  font-size: .7rem;
+  color: var(--flint);
+  text-wrap: pretty;
+}
 
 /* -------------------------------------------------------------------- foot -- */
 
@@ -988,18 +1197,188 @@ body[data-view="analyst"] .promo { display: none; }
 
 /* ------------------------------------------------ the ported controls ----- */
 
-/* Three of the page's controls are ports of React Bits components: `RubberSegment` — the
-   view switch and the replay speed — `Dock` — the bar at the foot of the page — and
-   `WakeSlider` — the match-minutes seek. The ports are static/rubber-segment.js,
-   static/dock.js and static/wake-slider.js, and their licence ships beside them in
-   static/vendor/react-bits-LICENSE.md.
+/* BorderGlow, ported as static/border-glow.js and applied to every panel boundary on the
+   page. The component's own layers, restated so that only the boundary of a panel is ever
+   touched: the host keeps its display, padding, border, radius and background, and the
+   class adds three layers behind its content — a mesh-gradient 1px ring, a soft wash
+   inside the edges, and the outer halo — each one masked to a cone that follows the
+   pointer's bearing. Two variables are written by the port as the pointer moves, and the
+   three opacity calculations below are functions of both: `--edge-proximity` is how close
+   to the boundary the pointer is *inside* this panel, and `--glow-falloff` is how much of
+   the page's one light reaches this panel at all — 1 while the pointer is inside it,
+   fading with the distance from the pointer to its nearest edge, and 0 beyond the port's
+   reach. That second one is what makes the whole page one lamp instead of eight: a panel
+   the pointer is nowhere near is dark because no light reaches it, rather than because it
+   is not hovered, so the panel the pointer is on and the panels around it are lit by the
+   same source and in the same direction.
+
+   The halo is drawn inside the boundary rather than outside it here: `--glow-padding` is
+   passed as 0 by the page, because the match bar and the check panel clip their contents
+   (`overflow: hidden`) and a halo that showed on five panels and not on two would read as
+   a fault rather than as a design. The ring is the effect; the halo is upstream's.
+
+   `[data-lit]` is the port's keyboard path: focus inside a panel lights the same edge, and
+   it is kept lit by the falloff the port writes for it rather than by a rule here — a
+   reader on the keyboard is that panel's light, and neither the pointer's absence nor its
+   distance may leave the panel dark behind them. */
+
+.border-glow {
+  --edge-proximity: 0;
+  --glow-falloff: 0;
+  --cursor-angle: 45deg;
+  --edge-sensitivity: 30;
+  --color-sensitivity: calc(var(--edge-sensitivity) + 20);
+  --border-radius: var(--radius);
+  --glow-padding: 0px;
+  --cone-spread: 25;
+  --fill-opacity: .5;
+
+  position: relative;
+  isolation: isolate;
+}
+
+.border-glow::before,
+.border-glow::after,
+.border-glow > .edge-light {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  transition: opacity .25s ease-out;
+  z-index: -1;
+}
+
+/* The mesh-gradient boundary itself, masked to the cone the pointer is in. */
+.border-glow::before {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--card-bg, #0E141C) 0 100%) padding-box,
+    linear-gradient(rgb(233 239 245 / 0%) 0% 100%) border-box,
+    var(--gradient-one) border-box,
+    var(--gradient-two) border-box,
+    var(--gradient-three) border-box,
+    var(--gradient-four) border-box,
+    var(--gradient-five) border-box,
+    var(--gradient-six) border-box,
+    var(--gradient-seven) border-box,
+    var(--gradient-base) border-box;
+  opacity: calc(
+    var(--glow-falloff) *
+    (var(--edge-proximity) - var(--color-sensitivity)) / (100 - var(--color-sensitivity))
+  );
+  mask-image:
+    conic-gradient(
+      from var(--cursor-angle) at center,
+      black calc(var(--cone-spread) * 1%),
+      transparent calc((var(--cone-spread) + 15) * 1%),
+      transparent calc((100 - var(--cone-spread) - 15) * 1%),
+      black calc((100 - var(--cone-spread)) * 1%)
+    );
+}
+
+/* The same mesh as a wash just inside the boundary, so the light reads as coming off the
+   edge rather than sitting on it. */
+.border-glow::after {
+  border: 1px solid transparent;
+  background:
+    var(--gradient-one) padding-box,
+    var(--gradient-two) padding-box,
+    var(--gradient-three) padding-box,
+    var(--gradient-four) padding-box,
+    var(--gradient-five) padding-box,
+    var(--gradient-six) padding-box,
+    var(--gradient-seven) padding-box,
+    var(--gradient-base) padding-box;
+  mask-image:
+    linear-gradient(to bottom, black, black),
+    radial-gradient(ellipse at 50% 50%, black 40%, transparent 65%),
+    radial-gradient(ellipse at 66% 66%, black 5%, transparent 40%),
+    radial-gradient(ellipse at 33% 33%, black 5%, transparent 40%),
+    radial-gradient(ellipse at 66% 33%, black 5%, transparent 40%),
+    radial-gradient(ellipse at 33% 66%, black 5%, transparent 40%),
+    conic-gradient(from var(--cursor-angle) at center, transparent 5%, black 15%, black 85%, transparent 95%);
+  mask-composite: subtract, add, add, add, add, add;
+  opacity: calc(
+    var(--glow-falloff) * var(--fill-opacity, .5) *
+    (var(--edge-proximity) - var(--color-sensitivity)) / (100 - var(--color-sensitivity))
+  );
+  mix-blend-mode: soft-light;
+}
+
+/* The halo: a ladder of inset and outset shadows, in the colour the port's own ladder
+   built, with the same gate as upstream — and at the same layer as the other two, where
+   upstream puts it beside the content instead. Upstream can: it renders an inner wrapper to
+   hold the children above everything. This port adorns markup it did not build, so the
+   halo goes behind the panel's text rather than over it — a light that washes across a
+   ledger's numbers is a light that makes them harder to read. */
+.border-glow > .edge-light {
+  inset: calc(var(--glow-padding, 0px) * -1);
+  mask-image:
+    conic-gradient(
+      from var(--cursor-angle) at center, black 2.5%, transparent 10%, transparent 90%, black 97.5%
+    );
+  opacity: calc(
+    var(--glow-falloff) *
+    (var(--edge-proximity) - var(--edge-sensitivity)) / (100 - var(--edge-sensitivity))
+  );
+  mix-blend-mode: plus-lighter;
+}
+
+.border-glow > .edge-light::before {
+  content: "";
+  position: absolute;
+  inset: var(--glow-padding, 0px);
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px var(--glow-color),
+    inset 0 0 1px 0 var(--glow-color-60),
+    inset 0 0 3px 0 var(--glow-color-50),
+    inset 0 0 6px 0 var(--glow-color-40),
+    inset 0 0 15px 0 var(--glow-color-30),
+    inset 0 0 25px 2px var(--glow-color-20),
+    inset 0 0 50px 2px var(--glow-color-10),
+    0 0 1px 0 var(--glow-color-60),
+    0 0 3px 0 var(--glow-color-50),
+    0 0 6px 0 var(--glow-color-40),
+    0 0 15px 0 var(--glow-color-30),
+    0 0 25px 2px var(--glow-color-20),
+    0 0 50px 2px var(--glow-color-10);
+}
+
+/* A panel with a pale background cannot take a light blend, so its layers are drawn
+   normally. No panel on either page is pale today; the rule is here because the port reads
+   the background off the element and a caller can hand it one. */
+.border-glow--light::after,
+.border-glow--light > .edge-light {
+  mix-blend-mode: normal;
+}
+
+.border-glow--light::before,
+.border-glow--light::after {
+  border-color: rgb(24 24 27 / 12%);
+}
+
+/* ---- the controls: RubberSegment, Dock, WakeSlider, SlingButton, InfiniteMenu ---- */
+
+/* Four of the page's controls are ports of React Bits components: `RubberSegment` — the
+   view switch and the replay speed — `Dock` — the bar at the foot of the page —
+   `WakeSlider` — the match-minutes seek — and `SlingButton` — the pad that opens a goal's
+   build-up. The ports are static/rubber-segment.js, static/dock.js, static/wake-slider.js
+   and static/sling-button.js, and their licence ships beside them in
+   static/vendor/react-bits-LICENSE.md. BorderGlow, above, is a port too, and it is not a
+   control at all: it is a treatment of the panels this page is made of.
 
    The CSS below is the components' own, restated in this page's palette so that a control
    cannot drift into a colour that means something here: the thumb, the menu highlight and
    the lit bars take --chalk, panels and unlit bars take --turf, --flint and --rule-hard,
    and no control touches --verify or --flag, which mean published and caught. Geometry
    (--rs-h, --rs-radius, --dock-base, --dock-thickness, --ws-height …) is set on each
-   instance from its options at mount, the way the components set it from their props. */
+   instance from its options at mount, the way the components set it from their props.
+
+   One exception, named rather than borrowed: the sling's pad goes green on hover and on a
+   keyboard's focus ring, through --launch-hover. That token is declared once, in :root,
+   with the reason beside it; nothing else here reaches for a green. */
 
 .rubber-segment {
   --rs-track: rgba(7, 10, 15, .55);
@@ -1608,6 +1987,635 @@ body[data-view="analyst"] .promo { display: none; }
      port rather than by the stylesheet. */
   .wake-slider__bar { transform: scaleY(var(--ws-rest)) !important; }
   .wake-slider__crest { opacity: 0 !important; }
+}
+
+/* ---- SlingButton ------------------------------------------------------------------ */
+
+/* The launcher's pad. Its own stylesheet, transcribed, with this page's colours in the
+   component's own tokens — a caller can still override any of them through `set({tokens})`,
+   which is how the component's palette stays reachable. */
+.sling-button {
+  --sl-size: 56px;
+  --sl-svg: 90px;
+  --sl-pad: var(--chalk);
+  --sl-icon: var(--night);
+  --sl-accent: var(--chalk);
+  --sl-well: rgba(7, 10, 15, .55);
+  --sl-band: var(--flint);
+  --sl-stroke: 3px;
+  --sl-dot: 8px;
+  --sl-ease-out: cubic-bezier(.23, 1, .32, 1);
+  --sl-hover: var(--launch-hover);
+
+  position: relative;
+  display: inline-block;
+  width: var(--sl-size);
+  height: var(--sl-size);
+}
+
+.sling-button__fx {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--sl-svg);
+  height: var(--sl-svg);
+  margin: calc(var(--sl-svg) / -2) 0 0 calc(var(--sl-svg) / -2);
+  overflow: visible;
+  pointer-events: none;
+  shape-rendering: geometricPrecision;
+}
+
+.sling-button__well {
+  fill: var(--sl-well);
+  transition: fill 200ms ease;
+}
+
+.sling-button[data-sent] .sling-button__well { fill: var(--sl-accent); }
+
+.sling-button__band {
+  fill: none;
+  stroke: var(--sl-band);
+  stroke-width: var(--sl-stroke);
+  stroke-linecap: round;
+  transition: stroke-width 160ms var(--sl-ease-out);
+}
+
+.sling-button[data-armed] .sling-button__band { stroke-width: calc(var(--sl-stroke) * 1.5); }
+
+.sling-button__band--hot { stroke: var(--sl-accent); }
+
+.sling-button__arc {
+  fill: none;
+  stroke: var(--sl-accent);
+  stroke-width: var(--sl-stroke);
+  stroke-linecap: butt;
+  transition: stroke-width 160ms var(--sl-ease-out);
+}
+
+.sling-button[data-armed] .sling-button__arc { stroke-width: calc(var(--sl-stroke) * 1.5); }
+
+.sling-button__move {
+  position: absolute;
+  inset: 0;
+}
+
+.sling-button__pad {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: grab;
+  outline: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* A hit area slightly wider than the pad, so a pull begun at the rim is still a pull. */
+.sling-button__pad::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+}
+
+.sling-button__pad[data-held] { cursor: grabbing; }
+
+.sling-button[data-disabled] .sling-button__pad { cursor: not-allowed; }
+.sling-button[data-disabled] { opacity: .5; }
+
+.sling-button__face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--sl-pad);
+  color: var(--sl-icon);
+  transition: transform 160ms var(--sl-ease-out), background 160ms ease, color 160ms ease;
+}
+
+.sling-button__pad[data-held] .sling-button__face { transform: scale(.97); }
+.sling-button__pad[data-armed] .sling-button__face { transform: scale(1.04); }
+
+/* The one green on the page that is not a verdict: see --launch-hover in :root. Hover and
+   the keyboard's focus ring get the same treatment, so a reader without a pointer is not
+   shown a control that only lights up for someone else. */
+@media (hover: hover) and (pointer: fine) {
+  .sling-button:not([data-disabled]):hover .sling-button__face {
+    background: var(--sl-hover);
+    color: var(--night);
+  }
+  .sling-button:not([data-disabled]):hover .sling-button__well { fill: var(--sl-hover); }
+}
+
+.sling-button:has(.sling-button__pad:focus-visible) .sling-button__face {
+  background: var(--sl-hover);
+  color: var(--night);
+}
+
+.sling-button__icon { display: inline-flex; width: 40%; height: 40%; will-change: transform; }
+.sling-button__icon > svg { display: block; width: 100%; height: 100%; }
+
+.sling-button__dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--sl-dot);
+  height: var(--sl-dot);
+  margin: calc(var(--sl-dot) / -2) 0 0 calc(var(--sl-dot) / -2);
+  border-radius: 50%;
+  background: var(--sl-accent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sling-button__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sling-button__face { transform: none !important; transition: none; }
+}
+
+/* ---- InfiniteMenu, and the mode browser it is used on ----------------------------- */
+
+/* The component's own stylesheet, transcribed, with this page's colours in the tokens. Most
+   of it is the text beside the ball rather than the ball itself: the sphere is a canvas and
+   the words are DOM, so CSS is what keeps the two from sitting on each other.
+
+   The load-bearing value is `--infinite-menu-tile`, which the port publishes every frame as
+   the on-screen radius of a tile. Upstream's two columns are placed against it, and so are
+   this page's: the text stops where the tile starts, which is why the columns empty out as
+   the ball grows instead of the other way round. */
+
+.infinite-menu {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  outline: none;
+  container-type: inline-size;
+  color: var(--infinite-menu-text, var(--chalk));
+  -webkit-tap-highlight-color: transparent;
+}
+
+.infinite-menu:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--infinite-menu-text, var(--chalk));
+}
+
+.infinite-menu__canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.infinite-menu__canvas:active { cursor: grabbing; }
+
+.infinite-menu__info,
+.infinite-menu__custom {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.infinite-menu__title,
+.infinite-menu__description,
+.infinite-menu__action {
+  transition:
+    opacity .45s ease,
+    transform .45s cubic-bezier(.22, 1, .36, 1);
+}
+
+/* The built-in block, for a caller that does not supply `renderInfo`. */
+.infinite-menu__title {
+  position: absolute;
+  top: 50%;
+  right: calc(50% + var(--infinite-menu-tile, 160px) + 28px);
+  max-width: calc(50% - var(--infinite-menu-tile, 160px) - 48px);
+  font-family: var(--display);
+  font-size: clamp(1.2rem, calc((50cqw - var(--infinite-menu-tile, 160px)) * .2), 3.4rem);
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -.03em;
+  text-align: right;
+  text-shadow: var(--infinite-menu-shadow);
+  transform: translateY(-50%);
+  text-wrap: balance;
+}
+
+.infinite-menu__description {
+  position: absolute;
+  top: 50%;
+  left: calc(50% + var(--infinite-menu-tile, 160px) + 28px);
+  max-width: min(22ch, calc(50% - var(--infinite-menu-tile, 160px) - 48px));
+  font-size: clamp(.85rem, 1.5cqw, 1.05rem);
+  line-height: 1.55;
+  text-shadow: var(--infinite-menu-shadow);
+  opacity: .72;
+  transform: translateY(-50%);
+}
+
+.infinite-menu__action {
+  position: absolute;
+  bottom: 7%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--infinite-menu-accent);
+  color: var(--infinite-menu-on-accent);
+  pointer-events: auto;
+  transform: translateX(-50%);
+}
+
+.infinite-menu__action:hover { transform: translateX(-50%) scale(1.06); }
+
+.infinite-menu__action:focus-visible {
+  outline: 2px solid var(--infinite-menu-accent);
+  outline-offset: 3px;
+}
+
+/* While the ball is turning, the words leave: the front tile is a moving target and a
+   caption that stays put reads as a caption for whatever happens to be underneath it. */
+.infinite-menu__info[data-moving='true'] .infinite-menu__title {
+  opacity: 0;
+  transform: translate(16px, -50%);
+  transition-duration: .18s;
+}
+
+.infinite-menu__info[data-moving='true'] .infinite-menu__description {
+  opacity: 0;
+  transform: translate(-16px, -50%);
+  transition-duration: .18s;
+}
+
+.infinite-menu__info[data-moving='true'] .infinite-menu__action {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 16px) scale(.6);
+  transition-duration: .18s;
+}
+
+/* Narrow: the ball is shifted up by the port and the words move under it. */
+.infinite-menu__info[data-layout='stacked'] .infinite-menu__title {
+  top: auto;
+  right: 88px;
+  bottom: 52px;
+  left: 20px;
+  max-width: none;
+  font-size: clamp(1.3rem, 6cqw, 1.8rem);
+  text-align: left;
+  transform: none;
+}
+
+.infinite-menu__info[data-layout='stacked'] .infinite-menu__description {
+  top: auto;
+  right: 88px;
+  bottom: 22px;
+  left: 20px;
+  max-width: 36ch;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: none;
+}
+
+.infinite-menu__info[data-layout='stacked'] .infinite-menu__action {
+  right: 20px;
+  bottom: 22px;
+  left: auto;
+  transform: none;
+}
+
+.infinite-menu__info[data-layout='stacked'] .infinite-menu__action:hover { transform: scale(1.06); }
+
+.infinite-menu__info[data-layout='stacked'][data-moving='true'] .infinite-menu__title,
+.infinite-menu__info[data-layout='stacked'][data-moving='true'] .infinite-menu__description {
+  transform: translateY(12px);
+}
+
+.infinite-menu__info[data-layout='stacked'][data-moving='true'] .infinite-menu__action {
+  transform: translateY(12px) scale(.6);
+}
+
+/* ---- the mode browser's card ------------------------------------------------------ */
+
+/* Two columns, on the component's own split: the ball sits between them, and each column
+   stops short of it by exactly the tile's radius. The scrim is at the far edges only, for
+   the same reason — a wash across the middle would dim the thing the page exists to show. */
+.mb-card {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+}
+
+.mb-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(7, 10, 15, .9) 0%, rgba(7, 10, 15, .55) 18%, rgba(7, 10, 15, 0) 31%),
+    linear-gradient(270deg, rgba(7, 10, 15, .9) 0%, rgba(7, 10, 15, .55) 18%, rgba(7, 10, 15, 0) 31%);
+}
+
+.mb-card__left {
+  grid-column: 1;
+  padding: 0 calc(var(--infinite-menu-tile, 160px) + 1.6rem) 0 1.2rem;
+  text-align: right;
+  transition: opacity .45s ease, transform .45s cubic-bezier(.22, 1, .36, 1);
+}
+
+.mb-card__right {
+  grid-column: 2;
+  padding: 0 1.2rem 0 calc(var(--infinite-menu-tile, 160px) + 1.6rem);
+  transition: opacity .45s ease, transform .45s cubic-bezier(.22, 1, .36, 1);
+}
+
+.mb-card__eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .45rem;
+  flex-wrap: wrap;
+  font-size: .68rem;
+  font-weight: 600;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--flint);
+}
+
+.mb-card__badge {
+  color: var(--chalk);
+  border: 1px solid var(--rule-hard);
+  border-radius: 999px;
+  padding: .12rem .45rem;
+  letter-spacing: .1em;
+}
+
+.mb-card__score {
+  margin-top: .35rem;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: clamp(2.4rem, 6cqw, 4.2rem);
+  line-height: 1;
+  letter-spacing: -.03em;
+  text-shadow: var(--infinite-menu-shadow);
+}
+
+.mb-card__teams {
+  margin-top: .3rem;
+  font-size: clamp(.85rem, 1.3cqw, 1.05rem);
+  text-shadow: var(--infinite-menu-shadow);
+}
+
+.mb-card__counts {
+  font-family: var(--mono);
+  font-size: .72rem;
+  letter-spacing: .04em;
+  color: var(--chalk);
+}
+
+.mb-card__note {
+  margin-top: .5rem;
+  font-size: clamp(.82rem, 1.3cqw, 1rem);
+  line-height: 1.55;
+  opacity: .78;
+  text-shadow: var(--infinite-menu-shadow);
+}
+
+.mb-card__when {
+  margin-top: .5rem;
+  font-family: var(--mono);
+  font-size: .7rem;
+  color: var(--flint);
+}
+
+/* The way in. A worded control rather than the component's icon-only circle: the thing it
+   opens is a match, and "Open this match" is worth more on screen than an arrow. */
+.mb-card__open {
+  position: absolute;
+  bottom: 6%;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  padding: .55rem 1.1rem;
+  border: 1px solid var(--infinite-menu-accent);
+  border-radius: 999px;
+  background: var(--infinite-menu-accent);
+  color: var(--infinite-menu-on-accent);
+  font-size: .78rem;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: opacity .45s ease, transform .45s cubic-bezier(.22, 1, .36, 1);
+}
+
+.mb-card__open:hover { transform: translateX(-50%) scale(1.04); }
+
+.infinite-menu__info[data-moving='true'] .mb-card__left {
+  opacity: 0;
+  transform: translateX(16px);
+  transition-duration: .18s;
+}
+
+.infinite-menu__info[data-moving='true'] .mb-card__right {
+  opacity: 0;
+  transform: translateX(-16px);
+  transition-duration: .18s;
+}
+
+.infinite-menu__info[data-moving='true'] .mb-card__open {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 16px) scale(.6);
+  transition-duration: .18s;
+}
+
+/* Narrow: one column under the ball, which the port has already shifted upwards. */
+.infinite-menu__info[data-layout='stacked'] .mb-card {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: end;
+  padding-bottom: 5.4rem;
+}
+
+.infinite-menu__info[data-layout='stacked'] .mb-card__left {
+  grid-column: 1;
+  padding: 0 1.2rem;
+  text-align: left;
+}
+
+.infinite-menu__info[data-layout='stacked'] .mb-card__right {
+  grid-column: 1;
+  padding: .5rem 1.2rem 0;
+}
+
+.infinite-menu__info[data-layout='stacked'] .mb-card__eyebrow { justify-content: flex-start; }
+
+.infinite-menu__info[data-layout='stacked'] .mb-card__note {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.infinite-menu__info[data-layout='stacked'] .mb-card__open { bottom: 1.2rem; }
+
+/* ---- what a browser with no WebGL2 gets instead of the sphere --------------------- */
+
+/* Not an apology: the same matches, in the same order, each one a click from the same
+   replay, in a list a reader can also hear. The status line above says which was built. */
+.infinite-menu--fallback { overflow: auto; padding: .8rem; }
+
+.infinite-menu__fallback { display: grid; gap: .3rem; }
+
+.infinite-menu__fallback-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: .1rem;
+  padding: .5rem .6rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.infinite-menu__fallback-btn {
+  text-align: left;
+  font-family: var(--display);
+  font-size: .95rem;
+  letter-spacing: .01em;
+}
+
+.infinite-menu__fallback-btn:hover { color: var(--chalk); }
+
+.infinite-menu__fallback-note { font-size: .72rem; line-height: 1.5; color: var(--flint); }
+
+/* ---- the mode browser's page ------------------------------------------------------ */
+
+.mb {
+  margin: 0;
+  min-height: 100%;
+  background: var(--night);
+  color: var(--chalk);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mb__wrap {
+  max-width: 90rem;
+  margin: 0 auto;
+  padding: 1.1rem clamp(.75rem, 2vw, 1.6rem) 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mb__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-bottom: .85rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.mb__back {
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--flint);
+  border: 1px solid var(--rule-hard);
+  border-radius: var(--radius);
+  padding: .4rem .75rem;
+  transition: color .2s ease, border-color .2s ease;
+}
+
+.mb__back:hover { color: var(--chalk); border-color: var(--chalk); }
+
+.mb__title {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: clamp(1.5rem, 3.2vw, 2.4rem);
+  line-height: 1.1;
+  letter-spacing: -.01em;
+  text-transform: uppercase;
+}
+
+.mb__lede,
+.mb__note {
+  max-width: 68ch;
+  color: var(--flint);
+  font-size: .92rem;
+  line-height: 1.65;
+}
+
+.mb__note { font-size: .82rem; }
+
+/* Tall enough for a sphere to be worth spinning, and bounded so that on a wide screen it
+   is a window rather than the whole viewport. */
+.mb__stage {
+  position: relative;
+  height: min(64vh, 40rem);
+  min-height: 22rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: radial-gradient(120% 110% at 50% 0%, #111823, var(--night) 72%);
+}
+
+.mb__stage--empty { border-style: dashed; display: grid; place-items: center; }
+
+.mb__status,
+.mb__count {
+  font-family: var(--mono);
+  font-size: .72rem;
+  letter-spacing: .04em;
+  color: var(--flint);
+}
+
+.mb__status code {
+  font-family: inherit;
+  color: var(--chalk);
+  background: var(--turf);
+  border-radius: 2px;
+  padding: .08rem .35rem;
+}
+
+.mb__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--rule);
+  padding-top: .8rem;
+  font-size: .72rem;
+  color: var(--flint);
 }
 
 /* --------------------------------------------------------------- states ----- */

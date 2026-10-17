@@ -8,6 +8,18 @@ python -m pitchframe --overlay            # http://127.0.0.1:8000
 python -m pitchframe --overlay --port 8770 --seed 7
 ```
 
+Two pages, and the front door is the choice rather than a choice:
+
+| Path | What it is |
+|---|---|
+| `/` | The mode browser: every named match as a card on a sphere, each one a way in. |
+| `/match` | The feed: one replay, every published line checked, with its own query string. |
+| `/mode-browser` | Where the front door used to be. Redirects to `/`. |
+
+The rest of this file is about `/match`, because it is the page with the controls, the
+parameters and the panels. The catalogue's own page is in
+[The mode browser](#the-mode-browser).
+
 The overlay needs `fastapi` and `uvicorn`:
 
 ```bash
@@ -17,6 +29,25 @@ python -m pip install -r requirements.txt
 Nothing else in the project does. `--overlay` reports the missing dependency and the
 command that fixes it rather than raising an import error, so every other command
 still runs on a bare interpreter.
+
+### Opening it without a terminal
+
+`open-overlay.cmd` in the repository root is for double-clicking. It finds a Python (this
+checkout's `.venv` first), then asks the port what is already there, because a double-click
+cannot be asked a question:
+
+| What is on the port | What the launcher does |
+|---|---|
+| nothing | serves the overlay in this window and opens the catalogue when it answers |
+| this overlay, current | opens the catalogue and exits at once, leaving that server alone |
+| this overlay, out of date | stops and says so — the page would refuse every request |
+| something else | stops and names `--port`, so a busy 8000 is a flag rather than a mystery |
+
+`--open` is the flag underneath it: with `--overlay` it opens the catalogue in the default
+browser once the readiness probe answers, on a thread, rather than before `uvicorn` starts.
+Opening first is a race the browser loses — a tab that loads loopback before the socket is
+listening shows a connection error, and the reader is left reloading a page whose server was
+about to be ready.
 
 ## The two views
 
@@ -67,9 +98,15 @@ code reporting the catch.
 
 ## Query parameters
 
+*Which* match is not one of these: it is in the path, `/match/<key>`, because the match is
+what the page **is** rather than a frame of it — see [Which match
+opens](#which-match-opens). Everything below belongs to `/match/<key>` and describes the
+frame on screen. The front door takes one — `fault`, which it passes on when it opens a
+card — because a page with no replay of its own has no frame to describe.
+
 | Parameter | Default | Meaning |
 |---|---|---|
-| `seed` | `7` | Which synthetic match. Everything downstream is a function of it. |
+| `seed` | the scenario's seed (`28`) | Which synthetic match, by number rather than by name — for a seed no scenario owns, and for the links written before matches had names. A number that names a match is redirected to its name and its seed dropped. |
 | `fault` | `none` | `none` for the honest baseline, `narrator-invert` to plant one wrong direction per window. |
 | `view` | `fan` | `fan` or `analyst`. |
 | `match_id` | `PF-001` | Identifier used in generated event ids. |
@@ -77,13 +114,16 @@ code reporting the catch.
 | `goal` | none | A build-up to open, named by the payload's own key: `` clock\|team\|scorer ``. |
 
 ```text
-http://127.0.0.1:8770/?seed=7&fault=narrator-invert&view=analyst
+http://127.0.0.1:8770/match/matchday?fault=narrator-invert&view=analyst
+http://127.0.0.1:8770/match?seed=99            # a match no scenario owns, by number
 ```
 
 The JSON behind any frame is at `/api/replay` with the same parameters, so the page
 can be checked against the payload it came from. `/api/health` is the readiness probe,
-and it also reports whether the process agrees with the files on disk. Only the first
-four parameters reach the server; `at` and `goal` position the page and are read there.
+and it also reports whether the process agrees with the files on disk. The match reaches the
+server as `scenario=<key>` or as `seed=<number>` — the page sends the one its address gave
+it, and the endpoint refuses both at once rather than choosing. `fault` and `match_id`
+travel with it; `view`, `at` and `goal` are the page's own reading of what is on screen.
 
 ### A link to the frame you saw
 
@@ -96,8 +136,11 @@ displays anyway.
 
 Opening such a link always opens **paused** at the second it names. A link that resumed
 playing would put the reader at a different minute on every load, which is the opposite
-of what a bug report needs. The link carries the seed, the fault and the view as well as
-the position, so the same match is rebuilt rather than a similar one.
+of what a bug report needs. The match travels in the path and the fault and the view in
+the query, so the same match is rebuilt rather than a similar one — and a match with no
+name carries its seed the page was actually built from, rather than the one it asked for,
+because a link that inherited the server's default would open a different match from the
+one it describes.
 
 The open panel is named by the payload's own key for a goal — `3615|home|Tomek`, the
 clock, the side and the scorer the two lists already agree on. The page composes no key
@@ -110,20 +153,137 @@ closed and the position is honoured.
 ignored is a link that quietly does nothing, and one read but undocumented is a link
 nobody can construct.
 
+### Which match opens
+
+The default is not a seed picked off the top of the list. Seeds are named in
+`pitchframe/scenarios.py`, and the one the overlay opens on is chosen for having
+something to show: **matchday**, seed 28, five goals between the 12th and 78th minute,
+four of them from moves of five touches or more. **quiet**, seed 7, is the single-goal
+match this project's README numbers and several tests were written against — kept under
+its own name, and no longer the thing a viewer meets first.
+
+Every match has an address that says which one it is: `/match/matchday`, `/match/quiet`,
+`/match/storm`. A name is what a reader can read off the URL bar, hand to somebody else, or
+type back a week later; `?seed=28` is a number that could be anything, and the address is
+the only part of a link most people ever look at. The name is the path because the match is
+what the page is — the query string is already the frame, and a match is not a property of a
+frame.
+
+The name is also the only way in for a link that was written before this existed, and that
+is handled rather than promised. `/match?seed=28` is a **308** to `/match/matchday` with the
+rest of the query string carried across — the view, the second, the open build-up and the
+fault describe the frame, so they travel; `seed` itself is dropped, because it is the thing
+the name replaces and a URL holding both would be two descriptions of one match. A bare
+`/match` goes to the default scenario's name for the same reason. And a seed no scenario
+owns — `?seed=99`, which is what `--seed 99` produces — has no name to go to, so it is
+served as it always was: `--seed` and `?seed=` still take any number at all, which is the
+promise that made the flag worth having. An unknown *name*, by contrast, is a 404 listing
+the names there are: a typo that quietly served the default would look exactly like a match
+nobody wanted.
+
+Behind those two is the rest of the catalogue: eighteen named matches in total, fifteen
+of them picked by scanning seeds for goals spread across the match with enough long
+build-ups that the build-up panel has something to draw. Every one of them is recounted
+from the generator by `tests/test_scenarios.py` — the goal count, the minutes those goals
+fell in, and how many of the moves were long — so a note cannot go on describing a match
+the generator no longer produces. The catalogue is the same list the mode browser draws
+its cards from, which is the only reason it has to be right.
+
+```bash
+python -m pitchframe --scenarios          # every named match, with its contents
+python -m pitchframe --scenario quiet     # report on the quiet one
+python -m pitchframe --scenario storm     # or any of the other fifteen
+python -m pitchframe --overlay --scenario quiet
+```
+
+A seed is still a seed: `--seed` and `?seed=` take any number and the page rebuilds
+whatever it names, and the launcher prints the address of the match it is serving under
+that match's own name rather than as a number. The scenario is only the *default*, and it
+exists because of a report that the build-up panel was broken. It was not broken. It was pointed at seed 7,
+whose only goal is in the 60th minute and whose build-up is a single shot — so a viewer
+who opened the panel two thirds of the way through met a move with nothing to draw,
+which from the outside looks the same as a fault. Every note in that registry is
+recounted from the generator by `tests/test_scenarios.py`, so a note cannot go on
+describing a match the generator no longer produces.
+
+### The mode browser
+
+`/` is how a reader chooses between those matches instead of typing a seed — the front
+door, with the feed under it at `/match/<key>`. One card per entry in the catalogue, on a
+sphere: drag it to spin, step it with the arrow keys, press Enter or click the front card to
+open the match. Each card navigates to its own `path`, which the catalogue endpoint composes
+beside the entry it describes — so the addresses of this site are decided in one place, and
+a card cannot offer one the server does not serve. The feed then loads exactly what it
+always loads, one seed's replay, so browsing measures nothing new — it chooses what to
+measure. Each page links to the other: the feed's masthead to the catalogue, the
+catalogue's head to the feed.
+
+The order matters and was once the other way round. Opening on a single unpicked match put
+the choice one link away and made the other seventeen something to go looking for; opening
+on the sphere puts the choice where a reader starts, and the feed becomes where a card
+lands. A page whose whole subject is one match makes a poor front door for a catalogue of
+eighteen.
+
+The cards come from `/api/scenarios`, which serves the registry itself: the key, the
+label, the note, and the facts a card draws. That endpoint exists so the page does not
+carry a second copy of the catalogue — a list written into a script drifts from the
+registry the first time the generator is retuned, and nothing on screen would say so. It
+is cached for the process's life for the same reason a replay is: it costs about a second
+to measure and cannot change while the process lives. A server whose code has moved on
+refuses it with the same 503 the replay endpoint gives, because a stale catalogue names
+seeds this process would build differently.
+
+Three decisions in the page are worth naming:
+
+- **Every card is drawn, not loaded.** This project ships no binary assets and works with
+  no network, so a tile is drawn from its match's own numbers: the scoreline, the two
+  counts, and the minutes the goals fell in as ticks along a rule. Those ticks are *not*
+  split by side. Which side scored in the 20th minute is not something the catalogue says,
+  and colouring them would be the page inventing a fact — the one thing every other file
+  here refuses to do. The card beside the sphere names both teams in full, so a name cut to
+  fit a tile is an abbreviation of a fact rather than a different one.
+- **A browser without WebGL2 gets the catalogue, not an apology.** The sphere is the
+  interface, so failing to draw it must not also fail to reach the matches: the component's
+  fallback is a list of the same items, in the same order, each one a click from the same
+  replay, and a status line says which of the two was built. The fallback is a real path in
+  the port rather than a message, which is why it has tests of its own.
+- **The arrow keys are the page's, not the sphere's.** The port binds them on the document,
+  guarded so that a key aimed at a control — a field, a button, the feed's own seek — stays
+  that control's, which is how the feed's key handler has always been written. Binding them
+  on the sphere's own element instead would leave the line this page prints, *Arrow keys
+  step*, false until the reader happened to press Tab: nothing focuses the sphere on
+  arrival, and the front door is the one page where the reader has not been told to do
+  anything yet. The cost is that the arrows no longer scroll this page; Space and
+  PageUp/PageDown still do.
+
+`fault` is carried through from the browser's own query string, so a mode browser opened
+on the honest baseline opens honest matches and one opened with the fault planted keeps it.
+
 ## How it is put together
 
 ```text
+pitchframe/scenarios.py  Which match opens by default, and why. Stdlib only.
+pitchframe/ratings.py    Marks, the tallies behind them, and the award. Stdlib only.
 pitchframe/overlay/
   replay.py       The deterministic script. Standard library only.
   commentary.py   Turns a checked claim into a sentence. Standard library only.
   stale.py        Notices when the process has outlived the code. Standard library only.
   server.py       FastAPI shell. Serves what the modules above produced.
-  static/         The page: index.html, styles.css, app.js
+  static/         The feed: match.html, styles.css, app.js
+  static/index.html  The catalogue as a sphere. The front door, served at `/`.
+  static/mode-browser.js  Its cards, drawn from /api/scenarios, and the way in.
   static/slats.js The sea behind the page.
+  static/border-glow.js  The light on a panel's boundary. A port.
   static/rubber-segment.js  The view switch and the replay speed. A port.
   static/dock.js  The bar at the foot of the page. A port.
+  static/wake-slider.js  The match-minutes seek. A port.
+  static/sling-button.js  The build-up launcher's pad. A port.
+  static/infinite-menu.js  The mode browser's sphere. A port.
   static/motion.js  The springs and the one tween the ports need. Written here.
   static/vendor/  ogl, vendored for the sea — and the ports' upstream licence.
+tools/browser_check.py  Starts the overlay and a browser for the harness below.
+tools/browser_check.mjs  Drives the tab over the DevTools protocol, and measures.
+tests/test_browser_harness.py  What those measurements have to be. Gated.
 ```
 
 The split is by dependency, and it is the reason the overlay's behaviour is testable:
@@ -235,25 +395,188 @@ that could compose a label could also drop one. It never describes the move as
 footage or as tracking data, and the ball travel is reported in the schema's own
 normalised units with a note saying so, rather than in metres it was not measured in.
 
+The panel is opened from whichever surface is nearest, and there are three: the goal's
+own row on the timeline, the dock's *Goal build-ups* menu, and the **launcher** — the
+sling pad on the match bar, which opens the newest build-up the replay has reached and
+is on the page from the first frame. The first two exist only once a goal has happened,
+which is what made the feature look like a broken control on a quiet match: for sixty
+minutes there was nothing on the page that said the panel existed at all. The launcher
+says what it is waiting for, dims itself while there is nothing to open, and lights up
+the moment a goal lands — and `G` reaches it from the keyboard.
+
+### The ratings and the award
+
+`pitchframe/ratings.py` gives every player in both squads a mark out of ten, the
+tallies behind it, and — once the match is over — the man of the match with a paragraph
+about how they played. It is standard library only, like the rest of the overlay's
+logic, and deterministic: the same match always produces the same numbers.
+
+A rating is the one figure on this page that is a *judgement* rather than a
+measurement, and what makes it publishable is that the judgement is written down:
+
+- **The weights are constants in that file**, printed by the panel and recomputable by
+  a reader from the tallies beside each name. No model, no learned parameter, no scale
+  fitted to anything.
+- **Every term is a counted thing** — a goal, a completed pass, a strike on target that
+  produced no goal, a tackle that won the ball. Nothing reads a position, a reputation
+  or a minute of the match as evidence about a player.
+- **The marks move with the replay.** Each frame carries every player's mark *as of that
+  frame's clock*, counted from the events up to that minute and nothing later, so a mark
+  at 60 minutes is the mark the first hour produced rather than the one the match ended
+  with. The panel's own window label is the frame's clock.
+- **The award is withheld until full time.** The payload is the finished script, and the
+  award is computed over the whole match and carried from the first frame — deliberately:
+  no frame contains an award at all, so the page cannot read a partial one however it
+  tries. The page is what waits, and it waits on `decided_at`, the clock the replay
+  actually reaches. Naming a man of the match on the opening frame would spoil the replay
+  exactly as printing the final score would.
+- **The conclusion composes facts rather than causes.** It is a renderer in the same sense
+  the commentary is: it may say a player scored twice and may not say that this is why the
+  match was won. Phrasings are fixed per fact, so the same performance always reads the
+  same way, and a test forbids the words that would imply otherwise.
+
+The base is a **6.0**, and a player the stream never mentions sits on it. That is the
+honest reading of a player a windowed event stream does not touch, and it is why the
+panel prints the reason beside the number rather than the number alone: *1 goal ·
+3 stops · 25 completed passes* is the evidence, and the mark is what the fixed weights
+make of it.
+
 `prefers-reduced-motion` is honoured by not starting the animation on its own; the
 Replay button still plays, because pressing it is an explicit request.
 
+### The panel edges
+
+Every panel on both pages lights the boundary nearest the pointer, in a cone aimed at it —
+`static/border-glow.js`, a port of BorderGlow. Seven panels carry it on the feed (`data-glow`
+on the match bar, the ratings, the feed, the check, the ledger and the two rail panels) and
+one on the catalogue: the sphere's stage.
+
+Four things about it are this page's decisions rather than the component's, and each is in
+the file's own header as well:
+
+- **It adorns the panels; it does not wrap them.** Upstream renders a card and renders the
+  caller's children inside it. These panels are markup app.js holds references into — the
+  match bar's clock, the feed's list, the check's figures — so a port that re-parented them
+  would be rebuilding the page to draw a border on it. This one adds the layers to the
+  element it is handed and touches nothing else: no display, no padding, no border, no
+  background. That is asserted, not just intended: `TestThePanelGlow` fails if the host rule
+  in the stylesheet says anything but where the layers go, and the browser harness measures
+  each panel's own box with the port's class taken off and put back.
+- **The light is one light.** Upstream's component decides for itself that the pointer is
+  near it, which on a page of one card is the whole question and on a page of eight panels
+  is eight lamps: every panel the pointer happened to be inside would light to full
+  strength, each would aim at a bearing measured from its own centre, and the gutters
+  between them would be unlit seams. Here the page has **one** `pointermove` listener, every
+  mounted panel registers with it, and a frame's worth of moves is coalesced into one batch
+  of measurements. What a panel is given is a *falloff*: full while the pointer is inside
+  it, fading with the distance from the pointer to its nearest edge, and out of the picture
+  at 260px. That number is the whole of the reach, and it is written into the three layers'
+  opacities as a single multiplier — so what a reader sees is one lamp travelling across the
+  page, the boundary nearest the cursor brightest and its neighbours dimmer, rather than
+  eight effects that happen to share a colour. The cone each panel draws is still its own,
+  because only the panel knows where its own boundary is; what the light decides for all of
+  them is where the pointer is.
+- **The halo is drawn inside the boundary.** `--glow-padding` is passed as 0, so what lights
+  is the 1px mesh ring and the wash behind it rather than upstream's 40px halo outside the
+  card. The match bar and the check clip their contents (`overflow: hidden`), and a halo
+  that appeared on five panels and was cut off on two would read as a fault. The grid's gap
+  is a centimetre, which is no room for eight overlapping glows either.
+- **Keyboard focus lights the same edge.** A pointer-only decoration is one half the readers
+  never see, and every panel here has controls in it. On `focusin` the cone is aimed at the
+  control's own box — measured, the same way the pointer's bearing is measured — and the
+  proximity is taken to the component's full; on `focusout` it goes back to the pointer.
+
+The colours are tokens in the stylesheet (`--glow-hsl` for the halo, `--glow-one` to
+`--glow-three` for the mesh), not props, so that a colour is still decided in one place on
+this page. They are violet, and deliberately so: green and vermilion mean published and
+caught here, the two team colours are spoken for, and amber means live — violet is the one
+family left that no number, no verdict and no team has claimed. The stylesheet section is
+also inside the block the verdict-colour guard test reads.
+
+The stage on the catalogue page is the one panel whose interior is not a flat colour (it is
+a radial gradient), so the mask that keeps the mesh off a panel's inside is handed the token
+that gradient ends at rather than being read off the element: an empty mask would let the
+mesh paint a wedge across the sphere instead of a line along its edge. It is also the one
+place the effect reads more quietly, because the sphere's canvas covers the stage's inside
+and the halo behind it only shows through the gaps between tiles.
+
+How any of that can be *checked* is the other half of this section, because none of it is
+visible from a file. `tools/browser_check.py` starts the overlay on a port nothing else is
+using and a browser with a profile of its own, `tools/browser_check.mjs` drives that tab
+over the DevTools protocol, and `tests/test_browser_harness.py` says what the numbers have
+to be. The driver writes nothing to the page except one probe that takes the port's class off
+a panel to measure the box underneath it and puts it back, and it emulates
+`prefers-reduced-motion` for the whole run: with the sea moving and the replay appending
+rows, "did the pointer change this pixel" has no answer.
+
+What it measures, on the analyst view where all seven panels are laid out at once — the
+pointer three pixels inside the feed's left boundary, the replay paused:
+
+- every panel's share of the light is the distance from the pointer to its nearest edge,
+  within 0.02 of `1 - d/260`, and every lit panel's cone points at the pointer within a
+  degree — one source, seven arcs of it;
+- the panel the pointer is in is at 1.000, the ratings at 0.786 (56px away), the match bar at
+  0.136 (225px), and the four panels past the reach at 0.000 with all three of their layers
+  at opacity 0. Under the eight-lamps version the ratings and the match bar would both have
+  been dark, because neither is hovered;
+- in a 10px band inside that boundary 93% of the pixels change and the mean channel value
+  rises from 20.8 to 76.2, while the same rows at the *opposite* boundary move by 9.9 and
+  the panel's interior by 12.3 — and two frames with nothing moved between them differ in
+  **zero** pixels, which is what makes those numbers about the light and not about the sea;
+- with the pointer parked in the far corner, the feed's share is 0.000 and every layer of it
+  is at 0; focusing a control inside it takes it back to 1.000 with the ring at full and the
+  cone aimed at the button, and blurring it gives it back to the pointer.
+
+The same run draws the front door: WebGL2 present, a canvas built, 5086 distinct colours in
+a band across the stage (an empty rectangle is one), six arrow presses changing the front
+card from `/match/matchday` to `/match/switch`, and both of those addresses followed inside
+the page — the replay behind the key answers 200 with a seed, and the page at the address is
+the feed rather than a redirect. Neither page logged an exception, a console error or a
+failed request, the Google Fonts request being the one failure this project intends.
+
+It is gated, because half a minute and a browser is not what `python -m unittest` should do
+to somebody editing `claims.py`:
+
+```bash
+PITCHFRAME_BROWSER=1 python -m unittest tests.test_browser_harness
+python tools/browser_check.py --headed --json report.json    # watch it, keep the numbers
+```
+
+Without the variable the class skips; with it and no browser installed, the skip says which
+of the two is missing. A failure to drive the page is a failure rather than a skip, since the
+run is the thing that was asked for.
+
 ### The ported controls
 
-Four of the surfaces on this page are ports of React Bits components: the sea
+Seven of the pieces on the two pages are ports of React Bits components: the sea
 (`static/slats.js`, MicroSlats), the Fan/Analyst switch with the 1×/4×/16× group
 (`static/rubber-segment.js`, RubberSegment), the bar at the foot of the viewport
-(`static/dock.js`, Dock), and the match-minutes seek
-(`static/wake-slider.js`, WakeSlider). They were ported for the same reason each time — this
-project has no React, no package manager and no build step, so a component that arrives as
-JSX cannot be dropped in. The React half of each was a lifecycle, which the ports keep:
-`createRubberSegment(host, options)`, `createDock(host, options)` and
-`createWakeSlider(host, options)` return `{ set, destroy }`, and everything under those is
-the component's own logic. For the segmented control that is the stretch between slots, the
-squash on landing, the rubber band at the ends of the track and the flick projection; for
-the dock it is the magnification spring, the hop on a click, the long press, the flick, and
-the menu geometry with its tail; for the slider it is the snapping grid, the wake's reach
-and its skew behind the handle, and the two springs the wake is drawn between.
+(`static/dock.js`, Dock), the match-minutes seek (`static/wake-slider.js`, WakeSlider), the
+build-up launcher's pad (`static/sling-button.js`, SlingButton), the catalogue's sphere
+(`static/infinite-menu.js`, InfiniteMenu), and the panel glow (`static/border-glow.js`,
+BorderGlow, which is not a control at all — see [the panel edges](#the-panel-edges)). They were ported for the same reason each time —
+this project has no React, no package manager and no build step, so a component that
+arrives as JSX cannot be dropped in. The React half of each was a lifecycle, which the
+ports keep: `createRubberSegment(host, options)`, `createDock(host, options)`,
+`createWakeSlider(host, options)`, `createSlingButton(host, options)` and
+`createInfiniteMenu(host, options)` return `{ set, destroy }` — with `setItems` and
+`active` beside them on the sphere, because a catalogue can arrive after the mount — and
+everything under those is the component's own logic. For the segmented control that is the
+stretch between slots, the squash on landing, the rubber band at the ends of the track and
+the flick projection; for the dock it is the magnification spring, the hop on a click, the
+long press, the flick, and the menu geometry with its tail; for the slider it is the
+snapping grid, the wake's reach and its skew behind the handle, and the two springs the
+wake is drawn between; for the sling it is the rubber-banding of the pull, the band drawn
+as the two tangents from the well to the pad, the power arc, the aim of the pad's own
+glyph, the arm-and-release rule, and the burst of particles thrown through the well along
+the direction the pad was pulled; for the sphere it is the Fibonacci layout, the
+quaternion drag with the tiles stretching behind it, the neighbour walk the arrows and the
+autoplay both step along, the settle that decides when a tile has arrived, and the whole
+sphere drawn in one instanced call from a texture atlas; and for the glow it is the
+proximity measure, the conic mask the pointer's bearing is fed into, the seven-stop mesh
+drawn from three colours, the ladder of shadows the halo is made of, and the intro sweep. Its three additions — drawn tiles,
+a watched reduced-motion setting, and the fallback list — are in
+[the mode browser](#the-mode-browser).
 
 `motion`, the one dependency these components declare, is not imported either.
 `static/motion.js` is the part of it they use — one spring and one cubic-bezier tween,
@@ -274,6 +597,8 @@ decision:
 | **The replay speed** | 1×, 4× or 16×, with the rate note beneath it. The in-panel 0.5×/1× stays a plain pressed-button group on purpose: it lives inside a closed `<dialog>`, which measures as nothing until it opens, and a thumb measured at zero parks itself in a corner. |
 | **The dock** | Play/pause, with the component's indicator dot marking a running replay; the speed as a checked menu; the two views; the goals reached so far; copy-link; and the keyboard list. It floats over the page rather than living in it, and it duplicates the transport deliberately — both drive `setView`/`setSpeed`/`setPlaying`, so they cannot disagree. |
 | **The seek** | The clock, as a minute of the match. The wake is the movement — it lifts where the handle is going and trails behind it — so a drag across the page reads as travel through the match rather than as a position. It replaces the range input rather than joining it: two controls for one position can disagree with nothing on screen to say which one the page believes. |
+| **The launcher** | The build-up. Pulled or tapped, it opens the newest goal the replay has reached; disabled, and dimmed, until there is one. It is the surface that makes the panel reachable at all in the first half of a quiet match, and the pad is where the gesture belongs because a pull delivered *something* rather than toggling a state. |
+| **The sphere** | *Which* match. It is the only control that leaves the page, and the only one whose value is not a setting but a choice — so it does not write a frame of the replay, it hands over a seed and lets the feed do what it always did with one. |
 
 Three decisions inside the dock are worth naming, because each is a place a floating control
 goes wrong:
@@ -328,7 +653,7 @@ about 13px: the seek reads as the timeline it is, filled to the minute the repla
 
 One difference from the sea is worth stating plainly, because a reader comparing the two
 would otherwise assume the same isolation. The sea is its own module and fails quietly: no
-WebGL2 means no sea and the page is otherwise untouched. The three controls are imported by
+WebGL2 means no sea and the page is otherwise untouched. The four controls are imported by
 `app.js`, so a module that cannot be served takes the replay down with it rather than
 degrading to buttons nothing happens behind. That is the trade: a control that is silently absent would
 be a page that looks fine and does nothing, and the failure that produces it — a module
@@ -439,8 +764,18 @@ ever needs one.
 - **Build-ups are short.** Possessions in the generator change hands often, so a move
   of three to six touches is typical and a nine-pass move is rare. That is a property
   of the synthetic match, not a limit of the extraction.
-- **Four surfaces here are ports, not ours.** The sea, the view switch with the replay
-  speed, the dock, and the match-minutes seek are ports of React Bits components, and `ogl`
-  is vendored for the sea. They are reviewed as dependencies rather than maintained as ours, their notices
-  ship beside them, and none of them decides anything: every number on the page still
-  comes from the payload.
+- **Seven surfaces here are ports, not ours.** The sea, the view switch with the replay
+  speed, the dock, the match-minutes seek, the build-up launcher's pad, the catalogue's
+  sphere, and the light on a panel's boundary are ports of React Bits components, and `ogl`
+  is vendored for the sea. They are reviewed as dependencies rather than maintained as ours,
+  their notices ship beside them, and none of them decides anything: every number on the
+  page still comes from the payload.
+- **A rating is a formula, not a scouting report.** It is computed from this match's own
+  event stream with fixed weights that are printed with it, so it is checkable, identical
+  on every run, and says nothing about a player that the stream did not record. It is not
+  a measure of ability and is not meant to be compared with ratings from anywhere else.
+- **The browser harness needs a browser and Node.** The parts of this page that no file can
+  describe are measured by `tools/browser_check.py`, which launches Chrome or Edge and drives
+  it; on a machine with neither, `tests/test_browser_harness.py` skips and says which of the
+  two is missing. Everything else in the suite still runs with nothing but Python, and the
+  glow and the sphere are the only things that lose their check when the browser is gone.

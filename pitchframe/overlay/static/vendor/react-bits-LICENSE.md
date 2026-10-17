@@ -29,8 +29,25 @@ SOFTWARE.
 
 ---
 
-This is the licence of the React Bits components whose ports live beside this file:
-`static/rubber-segment.js` (RubberSegment) and `static/dock.js` (Dock), both from
-https://reactbits.dev. It travels with them because the notice above has to be included in
-copies of the software, and because the Commons Clause names ports explicitly: those two
-files are part of this application and are not redistributed as components on their own.
+This is the licence of the React Bits components whose ports live beside this file, all
+from https://reactbits.dev:
+
+| port | component |
+|------|-----------|
+| `static/border-glow.js` | BorderGlow |
+| `static/rubber-segment.js` | RubberSegment |
+| `static/dock.js` | Dock |
+| `static/wake-slider.js` | WakeSlider |
+| `static/sling-button.js` | SlingButton |
+| `static/infinite-menu.js` | InfiniteMenu |
+| `static/slats.js` | MicroSlats |
+
+It travels with each of them because the notice above has to be included in copies of the
+software, and because the Commons Clause names ports explicitly: those files are part of
+this application and are not redistributed as components on their own. Each ported file
+carries the notice in its own header as well, so a file lifted out of this repository
+without its directory still arrives with the terms attached.
+
+`static/vendor/ogl.mjs` is not one of them: it is the vendored WebGL library MicroSlats
+depends on, and it carries its own terms in its own header — Unlicense, which asks for
+nothing of this kind.
