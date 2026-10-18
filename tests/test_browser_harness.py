@@ -426,6 +426,49 @@ class BrowserHarnessTest(unittest.TestCase):
                 self.assertIn("text/html", address["contentType"])
                 self.assertEqual(address["pagePath"], "feed", "the address a card offers is not the feed")
 
+    # -------------------------------------------------------------- the pressure -- */
+
+    def test_a_face_with_no_axes_is_reported_flat(self) -> None:
+        """The pressure type's effect is a variable font answering an axis, and a face with
+        none is the failure that looks like a page working: the settings are written, the
+        face ignores them, and the word is simply still.
+
+        So the port was mounted on its own host in the machine's own fallback faces and
+        asked what it found. Where the axes are empty it has to say so — `data-pressure`
+        off the element, not a flag inside the module — write no settings at all, and still
+        leave the word readable once for a screen reader. Where a face does answer an axis
+        the two agree the other way: `live`, and something written on the letters.
+
+        Which of the three candidates vary is the machine's answer, so a run whose faces
+        all vary skips rather than failing: that would be a red build for a font, not a bug.
+        """
+        readings = self.report["pressure"]
+        self.assertTrue(readings, "the pressure probe produced no readings")
+
+        flat = [reading for reading in readings if not reading["axes"]]
+        if not flat:
+            self.skipTest("every face this machine offers answers a variation axis")
+
+        for reading in flat:
+            with self.subTest(family=reading["family"]):
+                self.assertEqual(
+                    reading["pressure"],
+                    "flat",
+                    f"{reading['family']} has no axes and the port did not say so",
+                )
+                self.assertEqual(reading["written"], 0, "settings were written against a face that ignores them")
+                self.assertEqual(reading["sample"], "")
+                # The word survives the fallback: the same text, once, for a reader.
+                self.assertEqual(reading["say"], "Flat face")
+                self.assertEqual(reading["letters"], len("Flat face"))
+
+        for reading in readings:
+            with self.subTest(family=reading["family"]):
+                self.assertEqual(reading["pressure"], "live" if reading["axes"] else "flat")
+                if reading["axes"]:
+                    self.assertIn("wght", reading["axes"], "a live reading without the weight axis")
+                    self.assertGreater(reading["written"], 0, "a live reading wrote nothing on its letters")
+
     # ------------------------------------------------------------------ errors -- */
 
     def test_neither_page_reported_a_problem(self) -> None:

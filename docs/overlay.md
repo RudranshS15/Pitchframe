@@ -512,8 +512,10 @@ How any of that can be *checked* is the other half of this section, because none
 visible from a file. `tools/browser_check.py` starts the overlay on a port nothing else is
 using and a browser with a profile of its own, `tools/browser_check.mjs` drives that tab
 over the DevTools protocol, and `tests/test_browser_harness.py` says what the numbers have
-to be. The driver writes nothing to the page except one probe that takes the port's class off
-a panel to measure the box underneath it and puts it back, and it emulates
+to be. The driver writes almost nothing to the page: one probe takes the port's class off a
+panel to measure the box underneath it and puts it back, and one mounts the pressure type on
+an element of its own, off the layout, in a face the machine may or may not vary, and removes
+it again — both are documented where they happen. It emulates
 `prefers-reduced-motion` for the whole run: with the sea moving and the replay appending
 rows, "did the pointer change this pixel" has no answer.
 
@@ -547,6 +549,14 @@ addresses followed inside
 the page — the replay behind the key answers 200 with a seed, and the page at the address is
 the feed rather than a redirect. Neither page logged an exception, a console error or a
 failed request, the Google Fonts request being the one failure this project intends.
+
+The run also asks the pressure type what it is on a face with no axes, because that is the
+failure with no symptom: `font-variation-settings` written at a static face is accepted and
+ignored, so the word is simply still and the module looks like it is working. Mounted on the
+machine's own fallback faces it reported `flat` with nothing written and the word intact in
+all three, and the assertion is the contract rather than the font — the axes it found, and
+the state it reported, have to agree — so a machine whose faces all vary skips instead of
+failing.
 
 It is gated, because half a minute and a browser is not what `python -m unittest` should do
 to somebody editing `claims.py`:

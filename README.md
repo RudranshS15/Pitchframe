@@ -5,8 +5,8 @@ stream into explainable, personalised narratives.
 
 > **Status: working end to end.** The generator, the analytics engine, the claim
 > layer, the Narrator/Verifier loop, the live overlay, the goal build-up panel and
-> the player ratings with the man of the match are implemented and tested (507
-> tests; the seven that drive a real browser are behind a gate — see
+> the player ratings with the man of the match are implemented and tested (514
+> tests; the eight that drive a real browser are behind a gate — see
 > [Development](#development)). See [Roadmap](#roadmap) for what is still open.
 
 ---
@@ -168,14 +168,17 @@ reached, a button that copies a link to the frame on screen, and a menu that lis
 the page answers to — the seek across the match is its **WakeSlider**, a track that
 lifts into a wake around the handle as it is dragged, and the build-up launcher is its
 **SlingButton**: a pad in a well that stretches a band when it is pulled and throws a burst
-of particles through the well when it is released. All were ported for the same reason as
+of particles through the well when it is released. The wordmark and the two names on the
+scoreboard are **TextPressure**, asking the face for a weight under the pointer, and the nav
+between the catalogue and the feed is **GooeyNav**, drawn over the page's own links so that
+the way between the two documents works with no script at all. All were ported for the same reason as
 the sea, their licences travel beside them, and the dock duplicates the transport on
 purpose: one state, three views of it. The keyboard is a fourth way in — `Space` plays and pauses, the arrows
 seek by one analysed window, `1`/`2`/`3` are the three speeds, `F`/`A` the two views and `G`
 the newest build-up — and the dock's last menu is that list.
 
 Every panel lights the boundary nearest the pointer, in a cone aimed at it. That is
-**BorderGlow**, the seventh port and the second that is not a control — the match bar, the
+**BorderGlow**, the second of the ports that is not a control — the match bar, the
 ratings, the commentary, the check, the ledger and the two rail panels all wear it, and so
 does the sphere's stage. Four of its decisions are this page's: it adorns the panels rather
 than wrapping them (the page holds references into every one of those panels); the halo is

@@ -590,6 +590,54 @@ out.catalogue.addresses = addresses.length === 0 ? [] : await evaluate(`(async (
   return out;
 })()`);
 
+/* ---------------------------------------------------- a face with no axes --- */
+
+/* The pressure type's whole effect is a variable font being asked for a weight it can
+   answer. On a face with no axes every `font-variation-settings` is accepted and ignored,
+   which is the failure that looks like a page working: the word is written, the module
+   loaded, nothing anywhere says the swell is not there.
+
+   So the port is mounted on its own hidden host — off the layout, in a face this machine
+   has and that does not vary — and asked what it is. A live face has to say `live` and
+   have written its settings; a flat one has to say `flat`, write nothing, and still leave
+   the word readable once. The readings are a list because which faces vary is the
+   machine's answer, not this file's: the assertion that matters is the contract between
+   the axes found and the state reported. */
+out.pressure = await evaluate(`(async () => {
+  const { createTextPressure } = await import('/static/text-pressure.js');
+  const candidates = ['monospace', '"Courier New", Courier, monospace', 'serif'];
+  const readings = [];
+  for (const family of candidates) {
+    const host = document.createElement('span');
+    host.textContent = 'Flat face';
+    host.style.cssText =
+      'position:fixed;left:8px;top:8px;opacity:0;pointer-events:none;font-family:' + family + ';font-size:20px';
+    document.body.appendChild(host);
+    const instance = createTextPressure(host, { fit: false });
+    const axes = instance.axes();
+    const box = host.getBoundingClientRect();
+    window.dispatchEvent(new PointerEvent('pointermove', {
+      clientX: box.left + box.width / 2,
+      clientY: box.top + box.height / 2,
+      bubbles: true
+    }));
+    await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+    const letters = [...host.querySelectorAll('.text-pressure__letter')];
+    readings.push({
+      family: family,
+      axes: axes,
+      pressure: host.dataset.pressure || null,
+      letters: letters.length,
+      written: letters.filter((span) => span.style.fontVariationSettings).length,
+      sample: (letters[0] && letters[0].style.fontVariationSettings) || '',
+      say: (host.querySelector('.text-pressure__say') || {}).textContent || ''
+    });
+    instance.destroy();
+    host.remove();
+  }
+  return readings;
+})()`);
+
 out.problems = problems;
 console.log(JSON.stringify(out, null, 2));
 ws.close();
