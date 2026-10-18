@@ -15,9 +15,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" media="print" onload="this.media='all'"
-      href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+      href="https://fonts.googleapis.com/css2?family=Oswald:wght@200..700&family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <noscript>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@200..700&family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 </noscript>
 <link rel="stylesheet" href="/static/styles.css">
 </head>
@@ -28,10 +28,19 @@
   <header class="mb__head">
     <p class="brand">
       <span class="brand__mark" aria-hidden="true">PF</span>
-      <span class="brand__name">Pitchframe</span>
+      <!-- The wordmark is the page's own word; masthead.js asks the face for a weight
+           under the pointer (static/text-pressure.js) and leaves the text alone. -->
+      <span class="brand__name" data-wordmark>Pitchframe</span>
       <span class="brand__tag">Mode browser</span>
     </p>
-    <a class="mb__back" href="/match">The match feed →</a>
+    <!-- The way to the feed, and the one control for it: the links are the page's, and
+         masthead.js draws the pill over them (static/gooey-nav.js). -->
+    <nav class="site-nav" data-site-nav aria-label="Site">
+      <ul class="site-nav__list" data-nav-list>
+        <li><a href="/" aria-current="page">Catalogue</a></li>
+        <li><a href="/match">The feed</a></li>
+      </ul>
+    </nav>
   </header>
 
   <h1 class="mb__title">Every match, on one sphere</h1>
@@ -77,6 +86,9 @@
 </noscript>
 
 <script type="module" src="/static/mode-browser.js"></script>
+<!-- The wordmark and the nav are the two things both documents share, so they are one
+     module rather than a mounting call in each page's own entry point. -->
+<script type="module" src="/static/masthead.js"></script>
 <script>
   /* The URL is a frame here too, in the one way this page has: it is the thing a reader
      copies to say where they were. Not a module, because app.js's rule about deferred

@@ -189,26 +189,12 @@ a.skip:focus {
 
 .masthead__side { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
 
-/* The link out to the mode browser, which leads the view switch on the masthead rather
-   than sitting in the footer: choosing between matches is a thing a reader does before
-   they have one on screen, and a control they have to scroll to find is not one. It is a
-   link rather than a button because it leaves the page, which is the only honest shape for
-   it — the sphere is a different document with a different job. */
-.browse {
-  order: -1;
-  font-size: .68rem;
-  font-weight: 600;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  text-decoration: none;
-  color: var(--flint);
-  border: 1px solid var(--rule-hard);
-  border-radius: var(--radius);
-  padding: .4rem .7rem;
-  transition: color .2s ease, border-color .2s ease;
-}
-
-.browse:hover { color: var(--chalk); border-color: var(--chalk); }
+/* The way to the other document is a nav rather than a single link: the two pages are two
+   jobs, and which one a reader is in is worth showing. It is the site's only navigation,
+   so it leads the masthead beside the view switch — choosing a document is a thing a
+   reader does before they have one on screen, and a control they have to scroll to find
+   is not one. Its appearance is the GooeyNav port's; this only places it. */
+.site-nav { margin-left: auto; }
 
 .provider {
   display: inline-flex;
@@ -2511,6 +2497,148 @@ body[data-view="analyst"] .promo { display: none; }
 
 .infinite-menu__fallback-note { font-size: .72rem; line-height: 1.5; color: var(--flint); }
 
+/* ---- GooeyNav, and the nav between the two documents ------------------------------ */
+
+/* The links are the page's own, and the pill is drawn over them: the frame is the
+   component's frosted panel, tinted from --turf rather than the component's own grey for
+   the reason every surface here is — a control must not borrow the green and vermilion
+   that mean published and caught. The active item is the page's selected treatment, chalk
+   fill and night ink, which is exactly what the dock's menus and badges use, so selecting
+   a page and selecting a speed read as the same act. */
+.gooey-nav {
+  --gn-pad: 5px;
+  --gn-gap: 2px;
+  --gn-font: .78rem;
+  --gn-x: 13px;
+  --gn-y: 7px;
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  font-size: var(--gn-font);
+  line-height: 1.2;
+  /* The goo is drawn on a canvas bigger than the row, so that droplets have somewhere to
+     fly; on a nav at the right edge of the page that oversized layer widened the
+     document and put a horizontal scrollbar under a page that has nothing to scroll to.
+     Clipping with a margin keeps the burst visible over the frame and the page its own
+     width: `overflow: clip` is the one that does not create a scroll container, and the
+     margin is how far past the frame the droplets may still be seen. */
+  overflow: clip;
+  overflow-clip-margin: 28px;
+}
+
+/* A browser too old for `clip` gets a hard edge rather than a horizontal scrollbar. */
+@supports not (overflow: clip) {
+  .gooey-nav { overflow: hidden; }
+}
+
+.gooey-nav--sm { --gn-pad: 4px; --gn-gap: 2px; --gn-font: .72rem; --gn-x: 11px; --gn-y: 6px; }
+.gooey-nav--lg { --gn-pad: 7px; --gn-gap: 6px; --gn-font: .9rem; --gn-x: 20px; --gn-y: 11px; }
+
+.gooey-nav--framed {
+  padding: var(--gn-pad);
+  border-radius: 999px;
+  background: rgba(14, 20, 28, .72);
+  box-shadow: inset 0 0 0 1px var(--rule-hard), 0 16px 34px -26px #000;
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+}
+
+.gooey-nav__stage { position: relative; max-width: 100%; }
+
+.gooey-nav__canvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+
+.gooey-nav__fallback {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  border-radius: 999px;
+  background: var(--gooey-nav-pill, var(--chalk));
+  pointer-events: none;
+}
+
+.gooey-nav__list {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gn-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The label in the pill's colour is a second copy of the list, clipped to the traced
+   shape — the canvas draws the fill, so something that knows the same shape has to draw
+   the ink. It is presentational: its links have no href and no tab stop. */
+.gooey-nav__list--active {
+  position: absolute;
+  inset: 0;
+  color: var(--gooey-nav-ink, var(--night));
+  visibility: hidden;
+  clip-path: inset(100%);
+  pointer-events: none;
+}
+
+.gooey-nav__item { display: flex; }
+
+.gooey-nav__link {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  padding: var(--gn-y) var(--gn-x);
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--flint);
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color .2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gooey-nav__list--active .gooey-nav__link { color: inherit; }
+
+/* Which document this is, said by the markup rather than by the script: the page marks
+   its own link, and the port reads that mark to decide where the pill starts. */
+.gooey-nav__link[aria-current="page"] { color: var(--chalk); }
+.gooey-nav__link:focus-visible { outline: 2px solid var(--chalk); outline-offset: 3px; }
+
+@media (hover: hover) {
+  .gooey-nav__link:hover { color: var(--chalk); }
+}
+
+/* ---- TextPressure, and the two words it is used on -------------------------------- */
+
+/* The letters are spans so that each can be asked for its own weight; that is also why
+   the visual copy is hidden from the accessibility tree and made unselectable, leaving the
+   unbroken copy beside it as the word a reader hears and a selection takes. */
+.text-pressure-host { position: relative; }
+
+.text-pressure {
+  display: inline-block;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.text-pressure__letter { display: inline-block; }
+
+.text-pressure__say {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ---- the mode browser's page ------------------------------------------------------ */
 
 .mb {
@@ -2543,20 +2671,7 @@ body[data-view="analyst"] .promo { display: none; }
   border-bottom: 1px solid var(--rule);
 }
 
-.mb__back {
-  font-size: .7rem;
-  font-weight: 600;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  text-decoration: none;
-  color: var(--flint);
-  border: 1px solid var(--rule-hard);
-  border-radius: var(--radius);
-  padding: .4rem .75rem;
-  transition: color .2s ease, border-color .2s ease;
-}
-
-.mb__back:hover { color: var(--chalk); border-color: var(--chalk); }
+.mb__head .site-nav { margin-left: auto; }
 
 .mb__title {
   font-family: var(--display);

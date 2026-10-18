@@ -418,6 +418,7 @@ which is how the paths a browser without it takes get looked at.
 - [x] Player ratings from fixed weights, and the man of the match at full time
 - [x] Mode browser: the eighteen named matches, browsable, each one a click from its replay
 - [x] Readable per-match addresses, and a checked-in browser harness for the page's visuals
+- [x] A nav between the two pages, and a wordmark and team names that swell under the pointer
 - [ ] Analyst and Personaliser agents
 - [ ] Evaluation harness reporting rejection, fallback and latency figures
 - [ ] Live event feed in place of the deterministic replay

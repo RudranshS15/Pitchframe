@@ -1061,7 +1061,16 @@ class TestThePortedControls(unittest.TestCase):
         css = self.asset("/static/styles.css")
         self.assertIn("the ported controls", css, "the ports' stylesheet section is gone")
         section = css.split("the ported controls", 1)[1].split("states ----- */", 1)[0]
-        for control in ("border-glow", ".dock", ".rubber-segment", ".wake-slider", ".sling-button", ".infinite-menu"):
+        for control in (
+            "border-glow",
+            ".dock",
+            ".rubber-segment",
+            ".wake-slider",
+            ".sling-button",
+            ".infinite-menu",
+            ".gooey-nav",
+            ".text-pressure",
+        ):
             with self.subTest(control=control):
                 self.assertIn(control, section)
         return section
@@ -1076,6 +1085,9 @@ class TestThePortedControls(unittest.TestCase):
             "/static/sling-button.js",
             "/static/infinite-menu.js",
             "/static/mode-browser.js",
+            "/static/text-pressure.js",
+            "/static/gooey-nav.js",
+            "/static/masthead.js",
         ):
             with self.subTest(path=path):
                 response = self.client.get(path)
@@ -1100,6 +1112,9 @@ class TestThePortedControls(unittest.TestCase):
             "/static/sling-button.js",
             "/static/infinite-menu.js",
             "/static/mode-browser.js",
+            "/static/text-pressure.js",
+            "/static/gooey-nav.js",
+            "/static/masthead.js",
         ):
             for target in re.findall(r'from "(\./[^"]+)"', self.asset(module)):
                 seen += 1
@@ -1107,10 +1122,84 @@ class TestThePortedControls(unittest.TestCase):
                     self.assertEqual(
                         self.client.get("/static/" + target.lstrip("./")).status_code, 200
                     )
-        # app.js imports its four controls and the glow it dresses the panels with, each of
-        # the six ports imports the shared runtime, and the mode browser imports the sphere
-        # it is built on plus the glow its stage wears.
-        self.assertEqual(seen, 13)
+        # app.js imports its five controls and the glow it dresses the panels with; each of
+        # the eight ports imports the shared runtime; the mode browser imports the sphere it
+        # is built on plus the glow its stage wears; and the masthead imports the wordmark
+        # and the nav it mounts.
+        self.assertEqual(seen, 18)
+
+    def test_the_pressure_type_is_asked_for_an_axis_the_face_has(self) -> None:
+        """The effect is `font-variation-settings` written on a face that answers them.
+
+        A stylesheet that asks Google Fonts for three static weights is served a face with
+        no axes at all, and every setting the component writes is then accepted and
+        ignored: the word is still, the module still runs, and nothing anywhere says the
+        effect is not there. So the request is a range on both pages, and the port measures
+        the face before it writes anything, reporting a flat word as flat rather than
+        animating it against a font that cannot answer.
+        """
+        for path in ("/", "/match"):
+            with self.subTest(page=path):
+                self.assertIn("Oswald:wght@200..700", self.asset(path))
+        module = self.asset("/static/text-pressure.js")
+        self.assertIn("fontVariationSettings", module)
+        self.assertIn("measureAxes", module)
+        self.assertIn('"flat"', module, "the port cannot say a word is not varying")
+        self.assertIn("weightRange", module, "the face's own range is not a caller's choice")
+
+    def test_the_pressure_keeps_one_word_for_a_reader(self) -> None:
+        """The letters are spans so each can be varied on its own, which makes them useless
+        to a screen reader and to a selection. The visual copy is therefore hidden and one
+        unbroken copy is left in the host's own reading order — a wordmark a reader hears
+        once and copies once.
+        """
+        module = self.asset("/static/text-pressure.js")
+        self.assertIn('root.setAttribute("aria-hidden", "true")', module)
+        self.assertIn("text-pressure__say", module)
+        self.assertIn("say.textContent = settings.text", module)
+
+    def test_the_names_on_the_board_are_set_through_the_component(self) -> None:
+        """The component owns the letters, so a textContent beside it would leave the
+        scoreboard showing one name and the page title another."""
+        app = self.asset("/static/app.js")
+        self.assertIn("createTextPressure(host", app)
+        self.assertIn("teamNames[0].setText(doc.home)", app)
+        self.assertNotIn("el.teamHome.textContent", app)
+        self.assertNotIn("el.teamAway.textContent", app)
+        self.assertIn("data-wordmark", self.page())
+
+    def test_the_nav_is_the_pages_own_links(self) -> None:
+        """The way between the two documents has to work without the script, so the links
+        are written into the page with their real addresses, and the page marks which of
+        them it is. The port reads that markup; it does not keep a list of destinations of
+        its own, which could disagree with the routes the server serves.
+        """
+        for path in ("/", "/match"):
+            with self.subTest(page=path):
+                body = self.asset(path)
+                self.assertIn("data-site-nav", body)
+                self.assertIn('href="/"', body)
+                self.assertIn('href="/match"', body)
+                self.assertIn('aria-current="page"', body)
+                self.assertIn('src="/static/masthead.js"', body)
+        module = self.asset("/static/gooey-nav.js")
+        self.assertIn("[data-nav-list]", module)
+        self.assertIn("aria-current", module)
+        # A browser with no WebGL2 gets a moving pill rather than the component's static
+        # bar: the pill is the navigation's state and the goo is the flourish.
+        self.assertIn("gooey-nav__fallback", module)
+        # A click with a modifier, a middle click and a link to another origin are the
+        # browser's, not the control's.
+        self.assertIn("event.metaKey", module)
+
+    def test_the_masthead_mounts_both_shared_pieces(self) -> None:
+        """One module for the two things both documents share, so a page cannot be given a
+        wordmark without the nav or the nav without the wordmark."""
+        masthead = self.asset("/static/masthead.js")
+        self.assertIn("createGooeyNav(", masthead)
+        self.assertIn("createTextPressure(", masthead)
+        self.assertIn('from "./gooey-nav.js"', masthead)
+        self.assertIn('from "./text-pressure.js"', masthead)
 
     def test_the_page_offers_a_container_and_fills_it(self) -> None:
         """A container nothing writes to is a control that is not there, and the page's own

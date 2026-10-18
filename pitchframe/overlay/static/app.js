@@ -21,19 +21,26 @@
  *   can be handed to somebody else — which is what a bug report is. The parameters are
  *   read back at boot and the page opens there, paused.
  *
- * It is a module rather than a classic script because it imports the four ported controls:
- * the segmented control (RubberSegment) drawing the view switch and the replay speed, the
- * dock drawing the actions at the foot of the viewport, the wake slider (WakeSlider)
- * seeking through the match, and the sling (SlingButton) the build-up launcher is drawn on.
- * Each is given its state from here and reports changes back through
- * setView/setSpeed/setPlaying/seekTo or an onSend, so the panels, the transport, the dock
- * and the launcher are views of one state rather than states of their own.
+ * It is a module rather than a classic script because it imports the ported controls: the
+ * segmented control (RubberSegment) drawing the view switch and the replay speed, the dock
+ * drawing the actions at the foot of the viewport, the wake slider (WakeSlider) seeking
+ * through the match, the sling (SlingButton) the build-up launcher is drawn on, and the
+ * pressure type (TextPressure) the two team names are set in. Each is given its state from
+ * here and reports changes back through setView/setSpeed/setPlaying/seekTo or an onSend, so
+ * the panels, the transport, the dock and the launcher are views of one state rather than
+ * states of their own.
+ *
+ * The team names are set through the pressure port rather than written into the span, for
+ * the reason every other field here has one writer: the component owns the letters (it
+ * splits them to vary each one), so writing textContent beside it would leave the scoreboard
+ * showing one name and the document title another.
  */
 
 import { createBorderGlow } from "./border-glow.js";
 import { createDock } from "./dock.js";
 import { createRubberSegment } from "./rubber-segment.js";
 import { createSlingButton } from "./sling-button.js";
+import { createTextPressure } from "./text-pressure.js";
 import { createWakeSlider } from "./wake-slider.js";
 
 (() => {
@@ -1079,6 +1086,24 @@ import { createWakeSlider } from "./wake-slider.js";
     setSpeed(1);
     el.footUrl.textContent = location.origin + location.pathname;
 
+    /* The two names on the scoreboard. Mounted before the fetch because the span already
+       carries the word "Home" in the markup, and a reader whose server is not running
+       should still see a scoreboard rather than an empty pair of slots: the component is
+       mounted on what is there, and the payload replaces it when it arrives. */
+    const teamNames = [el.teamHome, el.teamAway].map((host) =>
+      createTextPressure(host, {
+        /* The board's own type scale, not the component's fill-the-container rule: the
+           names are a scoreboard's labels, sized by the layout like everything beside
+           them. Oswald's weight axis is the range this face has; the stylesheet rests
+           these at 500, so the pressure runs either side of it. */
+        fit: false,
+        radius: 0.5,
+        smoothing: 0.4,
+        clickRipple: false,
+        weightRange: [400, 700]
+      })
+    );
+
     /* Asked for by name when the address has one, and by number otherwise, which are the
        two ways a match can be described. Neither is invented here: a page that guessed a
        default would open a different match from the one its own address names the moment
@@ -1119,8 +1144,8 @@ import { createWakeSlider } from "./wake-slider.js";
     state.maxClock = doc.frames[doc.frames.length - 1].clock;
 
     document.title = `${doc.home} v ${doc.away} — Pitchframe`;
-    el.teamHome.textContent = doc.home;
-    el.teamAway.textContent = doc.away;
+    teamNames[0].setText(doc.home);
+    teamNames[1].setText(doc.away);
     el.footMatch.textContent =
       `${doc.home} v ${doc.away} · ${doc.frames.length} windows · seed ${doc.seed}` +
       (doc.fault === "none" ? "" : ` · fault ${doc.fault}`);

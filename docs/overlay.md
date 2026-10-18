@@ -284,6 +284,9 @@ pitchframe/overlay/
   static/wake-slider.js  The match-minutes seek. A port.
   static/sling-button.js  The build-up launcher's pad. A port.
   static/infinite-menu.js  The mode browser's sphere. A port.
+  static/text-pressure.js  The wordmark and the board's two names. A port.
+  static/gooey-nav.js  The nav between the two documents. A port.
+  static/masthead.js  The wordmark and the nav, mounted for both pages.
   static/motion.js  The springs and the one tween the ports need. Written here.
   static/vendor/  ogl, vendored for the sea — and the ports' upstream licence.
 tools/browser_check.py  Starts the overlay and a browser for the harness below.
@@ -573,20 +576,24 @@ because it is the path nothing else reaches.
 
 ### The ported controls
 
-Seven of the pieces on the two pages are ports of React Bits components: the sea
+Nine of the pieces on the two pages are ports of React Bits components: the sea
 (`static/slats.js`, MicroSlats), the Fan/Analyst switch with the 1×/4×/16× group
 (`static/rubber-segment.js`, RubberSegment), the bar at the foot of the viewport
 (`static/dock.js`, Dock), the match-minutes seek (`static/wake-slider.js`, WakeSlider), the
 build-up launcher's pad (`static/sling-button.js`, SlingButton), the catalogue's sphere
-(`static/infinite-menu.js`, InfiniteMenu), and the panel glow (`static/border-glow.js`,
+(`static/infinite-menu.js`, InfiniteMenu), the wordmark and the board's two team names
+(`static/text-pressure.js`, TextPressure), the nav between the two documents
+(`static/gooey-nav.js`, GooeyNav), and the panel glow (`static/border-glow.js`,
 BorderGlow, which is not a control at all — see [the panel edges](#the-panel-edges)). They were ported for the same reason each time —
 this project has no React, no package manager and no build step, so a component that
 arrives as JSX cannot be dropped in. The React half of each was a lifecycle, which the
 ports keep: `createRubberSegment(host, options)`, `createDock(host, options)`,
-`createWakeSlider(host, options)`, `createSlingButton(host, options)` and
-`createInfiniteMenu(host, options)` return `{ set, destroy }` — with `setItems` and
-`active` beside them on the sphere, because a catalogue can arrive after the mount — and
-everything under those is the component's own logic. For the segmented control that is the
+`createWakeSlider(host, options)`, `createSlingButton(host, options)`,
+`createInfiniteMenu(host, options)`, `createTextPressure(host, options)` and
+`createGooeyNav(host, options)` return `{ set, destroy }` — with `setItems` and
+`active` beside them on the sphere and `setText` beside them on the pressure type, because
+a catalogue and a match both arrive after the mount — and everything under those is the
+component's own logic. For the segmented control that is the
 stretch between slots, the squash on landing, the rubber band at the ends of the track and
 the flick projection; for the dock it is the magnification spring, the hop on a click, the
 long press, the flick, and the menu geometry with its tail; for the slider it is the
@@ -597,11 +604,31 @@ glyph, the arm-and-release rule, and the burst of particles thrown through the w
 the direction the pad was pulled; for the sphere it is the Fibonacci layout, the
 quaternion drag with the tiles stretching behind it, the neighbour walk the arrows and the
 autoplay both step along, the settle that decides when a tile has arrived, and the whole
-sphere drawn in one instanced call from a texture atlas; and for the glow it is the
+sphere drawn in one instanced call from a texture atlas; for the glow it is the
 proximity measure, the conic mask the pointer's bearing is fed into, the seven-stop mesh
-drawn from three colours, the ladder of shadows the halo is made of, and the intro sweep. Its three additions — drawn tiles,
+drawn from three colours, the ladder of shadows the halo is made of, and the intro sweep;
+for the pressure type it is the pressure field around the pointer, the soft follow, the
+idle wave and pulse, the ripple a click sends through the letters, and the per-letter
+settings written on every frame; and for the nav it is the pill as a signed distance field,
+the droplets a selection breaks it into, the springs that carry them, the field traced into
+a clip path so the label can be painted in the pill's colour, and the one draw call the goo
+is made in. The sphere's three additions — drawn tiles,
 a watched reduced-motion setting, and the fallback list — are in
 [the mode browser](#the-mode-browser).
+
+TextPressure and GooeyNav each add one thing this page needs rather than upstream's
+default. The pressure type measures which variation axes the loaded face answers before it
+writes any — two probe renders at opposite ends of each axis, compared — and a word in a
+face with none is left exactly as written with `data-pressure="flat"` saying so, because
+`font-variation-settings` on a face without the axis is accepted and ignored and there is
+no error to notice. That is why the pages ask Google Fonts for Oswald as a weight *range*:
+three static weights are a face with no axes, and every setting would be written into
+nothing. The nav reads its items from the page's own links and leaves them as links, so the
+way between the documents survives no script, no WebGL2 and no pointer; a browser without
+WebGL2 still gets the moving pill, because the pill is the navigation's state and the goo
+is the flourish. Its canvas is a little larger than the row so that droplets have somewhere
+to fly, which is why the nav clips with `overflow-clip-margin` rather than letting an
+oversized layer widen the document.
 
 `motion`, the one dependency these components declare, is not imported either.
 `static/motion.js` is the part of it they use — one spring and one cubic-bezier tween,
@@ -624,6 +651,7 @@ decision:
 | **The seek** | The clock, as a minute of the match. The wake is the movement — it lifts where the handle is going and trails behind it — so a drag across the page reads as travel through the match rather than as a position. It replaces the range input rather than joining it: two controls for one position can disagree with nothing on screen to say which one the page believes. |
 | **The launcher** | The build-up. Pulled or tapped, it opens the newest goal the replay has reached; disabled, and dimmed, until there is one. It is the surface that makes the panel reachable at all in the first half of a quiet match, and the pad is where the gesture belongs because a pull delivered *something* rather than toggling a state. |
 | **The sphere** | *Which* match. It is the only control that leaves the page, and the only one whose value is not a setting but a choice — so it does not write a frame of the replay, it hands over a seed and lets the feed do what it always did with one. |
+| **The nav** | *Which document.* Two pages, two jobs, and the one you are in is filled. It replaces the two one-way links each page used to carry: one control for the decision, marked by the page's own `aria-current` rather than by a script, and the only place a destination is written is the markup. |
 
 Three decisions inside the dock are worth naming, because each is a place a floating control
 goes wrong:

@@ -14,9 +14,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" media="print" onload="this.media='all'"
-      href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+      href="https://fonts.googleapis.com/css2?family=Oswald:wght@200..700&family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <noscript>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@200..700&family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 </noscript>
 <link rel="stylesheet" href="/static/styles.css">
 </head>
@@ -34,7 +34,10 @@
   <header class="masthead">
     <div class="brand">
       <span class="brand__mark" aria-hidden="true">PF</span>
-      <span class="brand__name">Pitchframe</span>
+      <!-- The wordmark is the page's own word; masthead.js only asks the face for a
+           weight under the pointer (static/text-pressure.js). Without that script this
+           is a span with a name in it, which is what it is with it too. -->
+      <span class="brand__name" data-wordmark>Pitchframe</span>
       <span class="brand__tag">Every line checked</span>
     </div>
 
@@ -43,9 +46,17 @@
         <span class="provider__beacon" aria-hidden="true"></span>
         <span id="provider-text">connecting…</span>
       </p>
-      <!-- The way back to the catalogue. This page is one match; the front door is how a
-           reader chooses which one, and it leads here for every card on it. -->
-      <a class="browse" href="/">Browse matches</a>
+      <!-- The way back to the catalogue, and the one control for it. This page is one
+           match; the front door is how a reader chooses which one, and it leads here for
+           every card on it. The links are the page's, with their own addresses and the
+           current one marked; masthead.js draws the pill over them (static/gooey-nav.js)
+           and leaves the navigation to the anchors. -->
+      <nav class="site-nav" data-site-nav aria-label="Site">
+        <ul class="site-nav__list" data-nav-list>
+          <li><a href="/">Catalogue</a></li>
+          <li><a href="/match" aria-current="page">The feed</a></li>
+        </ul>
+      </nav>
       <!-- RubberSegment, filled by app.js. It used to be two pressed buttons; the control
            is now the component's, and the page still only supplies the words. -->
       <div class="seg seg--view" id="view-seg" data-segment="view" role="group" aria-label="Choose a view"></div>
@@ -313,5 +324,8 @@
      every element it reaches for exists by the time it runs. -->
 <script type="module" src="/static/app.js"></script>
 <script type="module" src="/static/slats.js"></script>
+<!-- The wordmark and the nav are the two things both documents share, so they are one
+     module rather than a mounting call in each page's own entry point. -->
+<script type="module" src="/static/masthead.js"></script>
 </body>
 </html>
