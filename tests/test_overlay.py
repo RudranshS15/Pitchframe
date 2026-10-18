@@ -1192,6 +1192,26 @@ class TestThePortedControls(unittest.TestCase):
         # browser's, not the control's.
         self.assertIn("event.metaKey", module)
 
+    def test_the_nav_leaves_on_the_burst_rather_than_after_it(self) -> None:
+        """A selection is a navigation, so how long the click is held is the difference
+        between a control that feels finished and one that feels broken.
+
+        The address has to be followed while the droplets are still between the items: a
+        nav that waited out the whole animation would make every page change cost half a
+        second before it even started. So the hold is a share of `animationTime` — and it
+        is a share rather than a millisecond constant so that the look at the burst scales
+        with the animation the caller asked for. The navigation itself is a seam, so a
+        test or an embedded nav can watch a selection without leaving the document.
+        """
+        module = self.asset("/static/gooey-nav.js")
+        self.assertIn("const REVEAL_SHARE", module)
+        self.assertIn("settings.animationTime * REVEAL_SHARE", module)
+        self.assertIn('typeof options.navigate === "function"', module)
+        self.assertNotIn("location.assign(url.href)", module.split("onClick", 1)[1].split("addEventListener", 1)[0])
+        share = float(re.search(r"const REVEAL_SHARE = ([\d.]+)", module).group(1))
+        self.assertGreater(share, 0, "a reveal of zero is the burst nobody ever sees")
+        self.assertLess(share, 0.5, "the click is held for half the burst or more")
+
     def test_the_masthead_mounts_both_shared_pieces(self) -> None:
         """One module for the two things both documents share, so a page cannot be given a
         wordmark without the nav or the nav without the wordmark."""

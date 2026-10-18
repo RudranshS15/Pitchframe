@@ -612,7 +612,10 @@ idle wave and pulse, the ripple a click sends through the letters, and the per-l
 settings written on every frame; and for the nav it is the pill as a signed distance field,
 the droplets a selection breaks it into, the springs that carry them, the field traced into
 a clip path so the label can be painted in the pill's colour, and the one draw call the goo
-is made in. The sphere's three additions — drawn tiles,
+is made in. A selection follows its address at a share of that animation rather than at its
+end — about 180ms at the default 520 — so the page changes while the droplets are still in
+the air instead of after they have landed; a keyboard activation and a reader who has asked
+for reduced motion leave at once. The sphere's three additions — drawn tiles,
 a watched reduced-motion setting, and the fallback list — are in
 [the mode browser](#the-mode-browser).
 

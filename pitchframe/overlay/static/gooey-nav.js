@@ -30,8 +30,11 @@
  *   hover highlight borrows the page's hairline, `--rule-hard`.
  *
  *   A selection is a navigation. Upstream reports the index and its caller decides; here
- *   the anchor is the truth, so the click is held for the length of the burst and then
- *   followed. A link opened in a new tab, or one with a modifier held, is never held: the
+ *   the anchor is the truth, so the click is held only until the droplets have left the
+ *   pill and then followed — the page changes on the burst, not after it. Holding the
+ *   click for the whole animation would make choosing a page wait half a second to watch
+ *   particles land, which is a control that feels broken rather than one that feels
+ *   finished. A link opened in a new tab, or one with a modifier held, is never held: the
  *   browser's own behaviour is the reader's, not this control's.
  *
  *   `prefers-reduced-motion` is watched rather than sampled once, so turning the setting
@@ -49,6 +52,14 @@ import { prefersReducedMotion, watchReducedMotion } from "./motion.js";
 const MAX_DROPS = 32;
 const MAX_PILLS = 4;
 const MARGIN = 72;
+
+/*: How far into the burst the address is followed, as a share of `animationTime`. At the
+    default 520ms this is about 180ms: long enough that a reader sees the pill break and
+    the first droplets cross between the items, short enough that the click still reads as
+    immediate. It is a share rather than a millisecond constant so that a caller who slows
+    the animation for a larger nav gets a proportionally longer look at the burst from the
+    one knob it already has. */
+const REVEAL_SHARE = 0.34;
 
 const VERTEX = `#version 300 es
 in vec2 aPosition;
@@ -280,6 +291,13 @@ export function createGooeyNav(host, options = {}) {
 
   stage.append(canvas, fallback, list, overlay);
 
+  /* The page change itself. Overridable so a test can watch it happen without leaving the
+     document it is measuring, and so a caller that does not want to navigate (a nav inside
+     a dialog, say) can say what a selection means. */
+  const navigate = typeof options.navigate === "function"
+    ? options.navigate
+    : (url) => location.assign(url);
+
   const start = (() => {
     if (Number.isInteger(options.active)) return Math.min(Math.max(0, options.active), items.length - 1);
     const marked = items.findIndex(({ link }) => link.getAttribute("aria-current") === "page");
@@ -289,6 +307,12 @@ export function createGooeyNav(host, options = {}) {
   let active = start;
   let reduce = prefersReducedMotion();
   let disposed = false;
+  /* The pending page change, so a second selection can replace the first rather than race
+     it, and so destroying the nav cancels a navigation it was about to cause. `leaving` is
+     a destination and a frame time; `leavingGuard` is the timer that follows it if the page
+     stops painting. */
+  let leaving = null;
+  let leavingGuard = 0;
 
   /* --------------------------------------------------------------- the engine --- */
 
@@ -635,6 +659,21 @@ export function createGooeyNav(host, options = {}) {
 
     render();
 
+    /* The reveal is decided on painted frames rather than on a wall clock: the page is
+       left after a frame that showed the burst, so a busy page (the feed's replay and its
+       sea can starve timers for half a second) cannot navigate before the reader has seen
+       anything, and a fast one leaves on the first frame past the reveal. The navigation
+       is queued for the next frame because starting it inside this callback would take
+       the frame it was meant to be seen in with it. */
+    if (leaving && now >= leaving.at) {
+      const destination = leaving.url;
+      leaving = null;
+      window.clearTimeout(leavingGuard);
+      requestAnimationFrame(() => {
+        if (!disposed) navigate(destination);
+      });
+    }
+
     const host2 = pills.get(target);
     const resting =
       drops.length === 0 &&
@@ -746,12 +785,24 @@ export function createGooeyNav(host, options = {}) {
     if (url.origin !== location.origin) return;
     event.preventDefault();
     go(index, true);
-    /* A pointer click watches the burst and then leaves; a keyboard activation has no
-       pointer to watch it with, so it goes at once rather than making Enter feel slow. */
-    const wait = reduce || event.detail === 0 ? 0 : Math.min(420, settings.animationTime * 0.6);
-    window.setTimeout(() => {
-      if (!disposed) location.assign(url.href);
-    }, wait);
+    /* The burst is the page change, so the address is followed while the droplets are
+       still in the air. A keyboard activation has nothing to watch and reduced motion has
+       asked for nothing to watch, so both leave at once rather than making Enter or a
+       reader who turned the setting on wait out an animation they cannot see. */
+    const wait = reduce || event.detail === 0 ? 0 : settings.animationTime * REVEAL_SHARE;
+    if (wait <= 0) {
+      navigate(url.href);
+      return;
+    }
+    leaving = { url: url.href, at: performance.now() + wait };
+    window.clearTimeout(leavingGuard);
+    /* The guard, not the plan: if the loop never reaches the reveal — a hidden tab, a
+       page whose frames have stopped — the reader is still taken where they clicked. */
+    leavingGuard = window.setTimeout(() => {
+      const pending = leaving;
+      leaving = null;
+      if (!disposed && pending) navigate(pending.url);
+    }, wait + 600);
   };
 
   list.addEventListener("pointerover", onOver);
@@ -796,6 +847,8 @@ export function createGooeyNav(host, options = {}) {
     wake,
     destroy: () => {
       disposed = true;
+      leaving = null;
+      window.clearTimeout(leavingGuard);
       cancelAnimationFrame(raf);
       raf = 0;
       motionWatch();
