@@ -173,13 +173,21 @@ The name is also the only way in for a link that was written before this existed
 is handled rather than promised. `/match?seed=28` is a **308** to `/match/matchday` with the
 rest of the query string carried across — the view, the second, the open build-up and the
 fault describe the frame, so they travel; `seed` itself is dropped, because it is the thing
-the name replaces and a URL holding both would be two descriptions of one match. A bare
-`/match` goes to the default scenario's name for the same reason. And a seed no scenario
-owns — `?seed=99`, which is what `--seed 99` produces — has no name to go to, so it is
-served as it always was: `--seed` and `?seed=` still take any number at all, which is the
-promise that made the flag worth having. An unknown *name*, by contrast, is a 404 listing
-the names there are: a typo that quietly served the default would look exactly like a match
-nobody wanted.
+the name replaces and a URL holding both would be two descriptions of one match.
+`?scenario=quiet` is redirected the same way and for the same reason, to `/match/quiet`:
+the long form was answering with the *default's* address and dropping the name, which
+opened a different match from the one asked for — the failure this whole section exists to
+prevent. A bare `/match` goes to the default scenario's name and keeps the frame too, so
+`/match?at=3615&view=analyst` lands on the same minute of the same match rather than on
+minute zero in the fan view. A name and a number on one address are refused with the same
+400 the replay endpoint gives them, because they can name different matches.
+
+A seed no scenario owns — `?seed=99`, which is what `--seed 99` produces — has no name to
+go to, so it is served as it always was: `--seed` and `?seed=` still take any number at
+all, which is the promise that made the flag worth having. An unknown *name* in the path is
+a 404 listing the names there are; an unknown name in `?scenario=` is served to the page,
+which fetches the replay and shows the endpoint's 400 with that same list. Either way the
+reader is told the name is wrong, rather than being handed a match they did not ask for.
 
 Behind those two is the rest of the catalogue: eighteen named matches in total, fifteen
 of them picked by scanning seeds for goals spread across the match with enough long
@@ -202,9 +210,8 @@ that match's own name rather than as a number. The scenario is only the *default
 exists because of a report that the build-up panel was broken. It was not broken. It was pointed at seed 7,
 whose only goal is in the 60th minute and whose build-up is a single shot — so a viewer
 who opened the panel two thirds of the way through met a move with nothing to draw,
-which from the outside looks the same as a fault. Every note in that registry is
-recounted from the generator by `tests/test_scenarios.py`, so a note cannot go on
-describing a match the generator no longer produces.
+which from the outside looks the same as a fault. The default is a match chosen for its
+contents, and the reason is written down rather than remembered.
 
 ### The mode browser
 
@@ -584,6 +591,73 @@ exercises the sea's empty container, the catalogue's list, the hit test above it
 in place of the sphere's pixels. It is worth running by hand after touching either renderer,
 because it is the path nothing else reaches.
 
+### The analyst column
+
+The analyst view's column — the check, the ledger, the metrics and the line-ups — is one
+pinned column, and it is pinned as a whole for a reason that is easy to get wrong: a
+`position: sticky` box covers whatever follows it *in its own column* as the page scrolls.
+The rail used to stand after the pinned pair of check and ledger, so the metrics and the
+line-ups slid up underneath them and could not be read at all — the pixels were there and
+the pointer landed on the check panel above them. The rail lives inside the pin now, and
+there is nothing after the pin left to cover.
+
+The pin is also the column's own scrollport, which is the second half of the same report.
+All four panels together are about 1,400 pixels — taller than a laptop window — so a pin
+that merely took the column's height would strand its own bottom: the check and the ledger
+would hold the top of the window while the metrics and the line-ups sat below the fold,
+reachable only when the document ended. Bounded by the window — `100dvh`, with `100vh`
+written first as the fallback for a browser that has not learned the newer unit — and given
+`overflow-y: auto`, the pin covers nothing and hides nothing: the page scrolls the
+commentary, the column scrolls itself, and every panel can be brought wholly into view. A
+bounded flex column also
+shrinks its children to fit it — the check panel went from 253 pixels to 39 the first time
+the pin was given a height — so the panels are `flex: none`, there to be scrolled rather
+than squeezed.
+
+Nothing is cut by that scrollport. The glow port draws its three layers *inside* a panel's
+boundary (`--glow-padding` is 0 and the layer is inset 0), so a panel leaving the top of the
+column is clipped along its own edge exactly as the window clips it; the four pixels of
+padding, taken back by the negative margin, are for the focus rings of the controls in
+these panels, which are drawn outside their boxes. The harness reports a clipping ancestor
+only where it could actually cut something — when `--glow-padding` is not 0 — and asserts
+that it is 0 on every panel it measures.
+
+A scrollport that only a pointer can scroll is half a control, so the column carries a tab
+stop — written by `app.js` rather than into the markup, and only while it has something to
+scroll. Chrome, Edge and Firefox make scroll containers focusable by themselves; Safari
+does not, and a focusable box with nothing left to reach would be a tab stop that does
+nothing. It is labelled a region and outlined on its own edge (inside the box, because the
+box is the scrollport), and its scrollbar is drawn in the page's rule colour rather than the
+operating system's grey. The wheel chains as usual: it scrolls the column until the column
+ends and then scrolls the page, so a pointer over the column can never be trapped at the
+bottom of the line-ups.
+
+Both of those are checked in a browser, and the scroll one needs a page that has something
+to pin: at the opening minute the feed is a few rows long and the document is too short for
+the pin to reach the top of the window at all. So the harness walks the replay to full time
+from the keyboard first, scrolls the page to where the pin takes over, walks the column's
+own scroll at twenty-five positions, and asks of each panel whether it was wholly inside the
+column at some point and whether the point inside it belonged to the panel or to something
+drawn over it. Then it turns a real wheel over the column — `scrollTop` alone would keep
+passing if something had started swallowing the gesture — and checks that the column moves,
+and that a turn at its end moves the page. A panel on screen but underneath another is the
+failure this exists for.
+
+### The title
+
+The catalogue always opened on an `<h1>`; the feed opened on a scoreboard, and the match's
+name existed only in the tab and the footer — the right title for a file, the wrong one for
+a page. The feed has a heading above the match bar now, in the same display face and at the
+same scale as the catalogue's, and it carries the wordmark's treatment: the letters are
+spans whose weight the pointer asks for (`static/text-pressure.js`), so the first line a
+shared link opens on answers the pointer instead of sitting still.
+
+The words are the replay's own — the same `home` and `away` the scoreboard is set from,
+joined by the `v` the tab title already used — and they are written when the document
+arrives. Until then, and if the replay never arrives, the heading says what the page is
+("Verified match feed") rather than naming a match it has not been told about, which is the
+same rule the board's own two names follow.
+
 ### The ported controls
 
 Nine of the pieces on the two pages are ports of React Bits components: the sea
@@ -725,6 +799,61 @@ degrading to buttons nothing happens behind. That is the trade: a control that i
 be a page that looks fine and does nothing, and the failure that produces it — a module
 served with the wrong content type, or an import whose path is wrong — is invisible on
 screen and in the file that made it.
+
+### What a frame costs
+
+The feed animates: the replay redraws the board every frame, the sea draws behind it, and
+the seek's handle travels on a spring. What that costs was measured rather than assumed, by
+driving the page in a browser of its own with background throttling off and recording long
+tasks, frame intervals, a 100ms timer's lateness, a real press's delivery and a CPU profile
+— eight seconds of playback, three runs, medians. Two things were wrong, and both were the
+kind that look like a slow machine rather than a bug.
+
+**The value loop could schedule a second chain.** `static/motion.js` clears its frame
+handle on entry to a step and schedules the next frame at the end of it. A value is allowed
+to move another value from its own `onChange` — the wake slider hands its handle's velocity
+to a second spring on *every* step, which is how the wake is drawn from the speed the handle
+is travelling at — and that lands back in `wake()` while the loop is mid-step. With the
+handle already cleared, the re-entry scheduled a second chain on top of the one the step was
+about to schedule: two became four, four became eight, and the page ran its controls
+hundreds of times a second. A footer flag — the step in progress owns the next frame — is
+the whole fix, cleared in a `finally` so a value that throws cannot leave the loop asleep.
+
+**The board was rebuilt sixty times a second.** The payload moves in five-minute windows;
+the clock ticks once a second; and `renderBoard` wrote the minute, the score, the share, the
+ledger and the whole metrics table — twenty rows, four cells each — on every frame anyway.
+Each part of the board is now written only when the thing it shows has changed, with the
+minute and the scoreline compared as the strings they are written as and everything that
+is a function of the analysed frame keyed on the frame itself. It is the rule the dock's
+goal count and the launcher already followed, applied to the panel that needed it most. The
+seek's track keeps its own version of the same rule: a bar is written when its height
+changes, not once per frame for all sixty-four.
+
+What those two cost, on this machine, over eight seconds of playback at 1×:
+
+| | before | after |
+|---|---|---|
+| long tasks | 45 (2874ms) | 1 (81ms) |
+| frame interval, median | 41.6ms | 20.8ms |
+| a 100ms timer, median lateness | 40.5ms | 1.5ms |
+| the same timer, 95th percentile | 189ms | 29ms |
+| a real press, delivery, median | 14.3ms | 1.0ms |
+| main thread busy | 83% | 20% |
+| script time | 4630ms | 288ms |
+| profile self time, the seek's paint | 3321ms | 19ms |
+
+`python -m unittest` cannot see any of that: it is a property of two files and one browser.
+The parts that can be checked without one are checked — a test reads `motion.js` for the
+guard and the `finally`, and reads `app.js` for the frame-keyed render — and the numbers
+above are kept here, because the next person to write a per-frame render should know what
+the last one cost.
+
+They are medians of three runs on a machine doing nothing else, and that last clause is
+load-bearing: re-run while a browser and a dev server are busy and the task totals roughly
+double, while a press still lands in one or two milliseconds and the timers stay in the
+tens — none of them near the hundreds the loop bug produced. The comparison that means
+something is the two columns against each other, taken minutes apart by the same script on
+the same machine, not any one number against another afternoon's.
 
 ### The keyboard
 

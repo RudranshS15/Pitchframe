@@ -5,8 +5,8 @@ stream into explainable, personalised narratives.
 
 > **Status: working end to end.** The generator, the analytics engine, the claim
 > layer, the Narrator/Verifier loop, the live overlay, the goal build-up panel and
-> the player ratings with the man of the match are implemented and tested (514
-> tests; the eight that drive a real browser are behind a gate — see
+> the player ratings with the man of the match are implemented and tested (525
+> tests; the ten that drive a real browser are behind a gate — see
 > [Development](#development)). See [Roadmap](#roadmap) for what is still open.
 
 ---
