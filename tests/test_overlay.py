@@ -2084,6 +2084,7 @@ class TestTheModeBrowser(unittest.TestCase):
                 )
 
 
+@requires_server
 class TestTheRatingsPanel(unittest.TestCase):
     """The marks, the man of the match, and the clock that decides when it is named.
 
@@ -2205,6 +2206,7 @@ class TestTheRatingsPanel(unittest.TestCase):
         self.assertIn("doc.ratings && doc.ratings.labels", self.app())
 
 
+@requires_server
 class TestTheLauncher(unittest.TestCase):
     """The sling pad that opens the build-up panel.
 
