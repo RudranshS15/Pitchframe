@@ -17,8 +17,10 @@
  * Three things about how it drives the browser are deliberate:
  *
  *   It writes nothing to the page. Every probe is a read of the DOM, a computed style, or
- *   a screenshot. The one exception is documented where it happens: the layout probe takes
- *   the port's class off a panel to measure the box underneath it, and puts it back.
+ *   a screenshot. The two exceptions are documented where they happen: the column probe
+ *   scrolls the page to see which panels are reachable as the commentary moves and returns
+ *   it to the top, and the layout probe takes the port's class off a panel to measure the
+ *   box underneath it, then puts it back.
  *
  *   Reduced motion is emulated for the whole run. The sea animates, the sphere spins on
  *   its own and the replay appends rows — with any of those moving, "did the pointer change
@@ -259,23 +261,54 @@ out.feed.panels = await evaluate(`[...document.querySelectorAll('[data-glow]')].
     display: style.display,
     position: style.position,
     isolation: style.isolation,
-    radius: style.getPropertyValue('--border-radius').trim()
+    radius: style.getPropertyValue('--border-radius').trim(),
+    /* How far outside its own box a panel asks the halo to reach. Zero is the claim that
+       makes the clipping probe below mean something: nothing an ancestor clips can be
+       part of the halo if the halo never leaves the panel. */
+    glowPadding: parseFloat(style.getPropertyValue('--glow-padding')) || 0
   };
 })`);
 
-/* Anything between a panel and the page that clips would cut an outer halo off. The port
-   answers that by drawing the halo inside the boundary, and this is the check that the
-   page it is on has not changed its mind since. */
+/* The page's own name. The feed opens on a scoreboard, so the heading is the one element
+   that says what the address is — and it is the line a shared link lands on, which is why
+   it is mounted as a pressure host. The heading's visible letters are aria-hidden and the
+   clipped copy beside them is the one a reader hears, so the text is read from that copy:
+   it has to name the match the replay is, once, and agree with the tab. */
+out.feed.heading = await evaluate(`(() => {
+  const headings = document.querySelectorAll('h1');
+  const h1 = headings[0] || null;
+  const say = h1 ? h1.querySelector('.text-pressure__say') : null;
+  return {
+    count: headings.length,
+    tag: h1 ? h1.tagName : null,
+    text: (say ? say.textContent : (h1 ? h1.textContent : '')).trim(),
+    title: document.title,
+    pressure: Boolean(h1 && h1.classList.contains('text-pressure-host')),
+    letters: h1 ? h1.querySelectorAll('.text-pressure__letter').length : 0
+  };
+})()`);
+
+/* Anything between a panel and the page that would cut its halo off. The port answers that
+   by drawing the halo inside the boundary — `--glow-padding` is 0 and the layer is inset
+   0 — so an ancestor can only cut it when a panel has been asked to reach outside itself.
+   The report is what would actually be cut rather than every scroll container in between:
+   the analyst column is one, deliberately, so that its lower panels are reachable at all
+   (see the column probe below), and a panel scrolled against its edge is clipped along
+   its own boundary, which is what the window does too. Opacity and filter are reported
+   whatever the padding: they change how the panel is composited, not where it is. */
 out.feed.clippingAncestors = await evaluate(`(() => {
   const out = [];
   for (const el of document.querySelectorAll('[data-glow]')) {
+    const padding = parseFloat(getComputedStyle(el).getPropertyValue('--glow-padding')) || 0;
     for (let node = el.parentElement; node; node = node.parentElement) {
       const style = getComputedStyle(node);
-      if (style.overflow !== 'visible' || style.opacity !== '1' || style.filter !== 'none') {
+      const cuts = style.overflow !== 'visible' && padding > 0;
+      if (cuts || style.opacity !== '1' || style.filter !== 'none') {
         out.push({
           panel: el.className.split(' ')[0],
           ancestor: node.className || node.tagName,
-          overflow: style.overflow, opacity: style.opacity, filter: style.filter
+          overflow: style.overflow, opacity: style.opacity, filter: style.filter,
+          glowPadding: padding
         });
       }
     }
@@ -397,9 +430,134 @@ out.feed.bands = await (async () => {
   return report;
 })();
 
+/* ------------------------------------------------------- the analyst column --- */
+
+/* The column beside the commentary is pinned, and a pinned box covers whatever follows it
+   in its own column — which is exactly how the metrics and the line-ups used to slide up
+   under the check panel and the ledger and could not be read at all. Two things are asked
+   of it here, because fixing one without the other is what the reader reported: the rail
+   is inside the pin (so nothing is covered), and the pin is the column's own scrollport
+   (so the panels below the fold of a laptop window are reachable at all).
+
+   The page is scrolled to where the pin is stuck — where a reader following the commentary
+   is — and then the column's own scroll is walked: at each step, was a panel wholly
+   inside the column's client box, and did the point inside it belong to the panel or to
+   something drawn over it. Both scrolls are put back afterwards; this is the one probe
+   besides the layout one that moves the page rather than reading it, and it runs after
+   the pixel bands so none of them measures a scrolled page.
+
+   The replay is walked to full time first, one window at a time from the keyboard. At the
+   opening minute the feed is a few rows long, there is nothing for a pinned column to be
+   pinned against, and the document is too short for the pin to reach the top of the
+   window — which is a page nobody needs this guarantee about. */
+for (let i = 0; i < 18; i += 1) {
+  await press("ArrowRight", "ArrowRight", 39);
+  await sleep(60);
+}
+await sleep(700);
+out.feed.column = await evaluate(`(async () => {
+  const names = ["check", "ledger", "metrics", "squads"];
+  const panels = names.map((name) => document.querySelector("." + name));
+  const pin = document.querySelector(".side__pin");
+  const rail = document.querySelector(".rail");
+  const drawn = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  if (!pin) return { railInsidePin: false, panels: [] };
+
+  const range = document.documentElement.scrollHeight - window.innerHeight;
+  const pinTop = pin.getBoundingClientRect().top + window.scrollY;
+  /* Its sticky offset is 12 pixels; scrolling there is where the pin takes over. */
+  window.scrollTo(0, Math.max(0, Math.min(range, Math.round(pinTop - 12))));
+  await drawn();
+
+  const box = () => pin.getBoundingClientRect();
+  const seen = names.map((name) => ({ name, whole: false, covered: 0, positions: 0 }));
+  const steps = 24;
+
+  for (let step = 0; step <= steps; step += 1) {
+    pin.scrollTop = ((pin.scrollHeight - pin.clientHeight) * step) / steps;
+    await drawn();
+    panels.forEach((el, index) => {
+      if (!el) return;
+      const column = box();
+      const at = el.getBoundingClientRect();
+      const whole = at.top >= column.top - 1 && at.bottom <= column.bottom + 1
+        && at.top >= -1 && at.bottom <= window.innerHeight + 1;
+      if (whole) seen[index].whole = true;
+      if (at.top < column.top - 1 || at.bottom > column.bottom + 1) return;
+      const hit = document.elementFromPoint(
+        at.left + Math.min(24, at.width / 2),
+        Math.min(column.bottom - 4, Math.max(column.top + 4, at.top + 18))
+      );
+      seen[index].positions += 1;
+      if (!el.contains(hit)) seen[index].covered += 1;
+    });
+  }
+
+  const column = box();
+  const report = {
+    railInsidePin: Boolean(rail && pin.contains(rail)),
+    scrollRange: Math.round(range),
+    overflow: getComputedStyle(pin).overflowY,
+    client: pin.clientHeight,
+    scroll: pin.scrollHeight,
+    top: Math.round(column.top),
+    bottom: Math.round(column.bottom),
+    /* A scrollport only a pointer can scroll is half a control: the page gives it a tab
+       stop exactly while it has something to scroll, so Safari can reach it too. */
+    tabindex: pin.getAttribute('tabindex'),
+    role: pin.getAttribute('role'),
+    label: pin.getAttribute('aria-label'),
+    panels: seen
+  };
+  pin.scrollTop = 0;
+  window.scrollTo(0, 0);
+  await drawn();
+  return report;
+})()`);
+
+/* The gesture itself, because `scrollTop = x` would keep passing if something on the page
+   had started swallowing the wheel: a turn over the column has to move the column, and a
+   turn at its end has to move the page — otherwise the pointer over the column is a trap
+   at the bottom of the line-ups. */
+out.feed.column.wheel = await (async () => {
+  const spot = await evaluate(`(() => {
+    const pin = document.querySelector('.side__pin');
+    const range = document.documentElement.scrollHeight - window.innerHeight;
+    window.scrollTo(0, Math.min(range, Math.round(pin.getBoundingClientRect().top + window.scrollY - 12)));
+    pin.scrollTop = 0;
+    const b = pin.getBoundingClientRect();
+    return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) };
+  })()`);
+  await sleep(300);
+  const turn = async () => {
+    await send("Input.dispatchMouseEvent", {
+      type: "mouseWheel", x: spot.x, y: spot.y, deltaX: 0, deltaY: 320
+    });
+    await sleep(350);
+  };
+  await turn();
+  const columnMoved = await evaluate("document.querySelector('.side__pin').scrollTop");
+  await evaluate(`(() => {
+    const pin = document.querySelector('.side__pin');
+    pin.scrollTop = pin.scrollHeight - pin.clientHeight;
+    return true;
+  })()`);
+  const pageBefore = await evaluate("window.scrollY");
+  await turn();
+  const pageAfter = await evaluate("window.scrollY");
+  await evaluate(`(() => {
+    document.querySelector('.side__pin').scrollTop = 0;
+    window.scrollTo(0, 0);
+    return true;
+  })()`);
+  await sleep(200);
+  return { columnMoved: Math.round(columnMoved), pageBefore, pageAfter, pageMoved: pageAfter > pageBefore + 1 };
+})();
+
 /* ------------------------------------------------------------- the layout --- */
 
-/* The one probe that writes to the page. A port that adorned a panel by wrapping it, or by
+/* The one probe that writes to the markup (the column above moved the scroll position and
+   put it back). A port that adorned a panel by wrapping it, or by
    making the layer a flex item, would move the panel's own box; this takes the class and
    the layer off, measures the box underneath, and puts both back. It is last among the
    feed's probes so that nothing below measures a page in a state this created. */

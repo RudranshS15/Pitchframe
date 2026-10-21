@@ -212,6 +212,31 @@ class BrowserHarnessTest(unittest.TestCase):
                 f"{where}: {panel['name']} masks {actual:.1f}deg, not the {expected:.1f}deg toward the pointer",
             )
 
+    # --------------------------------------------------------------- the title -- */
+
+    def test_the_feed_names_itself(self) -> None:
+        """The page a shared link opens on says what it is, in one heading that moves.
+
+        The feed used to open on a scoreboard, with the match named only in the tab and
+        the footer; the heading is mounted as a pressure host, so the line is also the
+        one thing above the fold that answers the pointer. What is asserted is the
+        agreement rather than the words: one `<h1>`, its text is the tab's own name of
+        the match, and the letters were built to swell.
+        """
+        heading = self.feed["heading"]
+        self.assertEqual(heading["count"], 1, "the feed does not have exactly one heading")
+        self.assertEqual(heading["tag"], "H1")
+        self.assertTrue(heading["text"], "the heading has no text")
+        self.assertIn(" v ", heading["text"], "the heading does not name both teams")
+        self.assertTrue(
+            heading["title"].startswith(heading["text"]),
+            f"the tab says {heading['title']!r} and the page says {heading['text']!r}",
+        )
+        self.assertTrue(
+            heading["pressure"], "the heading is not a pressure host, so it sits still"
+        )
+        self.assertGreater(heading["letters"], 0, "the pressure port built no letters")
+
     # -------------------------------------------------------------- the panels -- */
 
     def test_every_panel_is_adorned_without_moving_its_own_box(self) -> None:
@@ -234,6 +259,11 @@ class BrowserHarnessTest(unittest.TestCase):
                 self.assertEqual(panel["position"], "relative")
                 self.assertEqual(panel["isolation"], "isolate", "the layers would paint over the page")
                 self.assertEqual(panel["radius"], "4px", "the corner is the panel's own, not a card's")
+                self.assertEqual(
+                    panel["glowPadding"],
+                    0,
+                    "the halo reaches outside the panel, where a scroll container would cut it",
+                )
 
         self.assertEqual(
             self.feed["clippingAncestors"],
@@ -248,6 +278,76 @@ class BrowserHarnessTest(unittest.TestCase):
                 self.assertTrue(row["same"], f"{row['before']} became {row['after']}")
                 self.assertEqual(row["displayWithClass"], row["displayWithoutClass"])
                 self.assertEqual(row["childrenBefore"], row["childrenAfter"], "the port moved a child")
+
+    def test_the_analyst_column_can_be_read_from_top_to_bottom(self) -> None:
+        """Every panel of the analyst column is reachable while the commentary scrolls.
+
+        A pinned box covers whatever follows it in its own column. The rail used to stand
+        after the pin — the check and the ledger — so the metrics and the line-ups slid up
+        underneath them as the page scrolled and could not be read at all. The rail moved
+        inside the pin, and the pin became the column's own scrollport: all four panels are
+        taller than a laptop window, so a pin without a scroll of its own would simply hide
+        its bottom below the fold instead.
+
+        Both halves are asked here, with the page scrolled to where the pin is stuck and
+        the column's scroll walked: is every panel wholly inside the column at some
+        position, and did the point inside it belong to the panel or to something drawn
+        over it. A panel that is on screen but underneath another is exactly the state this
+        test exists to catch, and a panel never wholly visible is one a reader with this
+        window has no way of reading.
+        """
+        column = self.feed["column"]
+        self.assertTrue(
+            column["railInsidePin"],
+            "the rail is not inside the pinned column, so the pin covers it as the page scrolls",
+        )
+        self.assertGreater(column["scrollRange"], 0, "the feed does not scroll, so nothing was measured")
+        self.assertIn(
+            column["overflow"],
+            ("auto", "scroll"),
+            "the pin is not a scrollport, so its lower panels are below the fold forever",
+        )
+        self.assertGreater(
+            column["scroll"],
+            column["client"],
+            "the column has nothing to scroll, so this window measured nothing",
+        )
+        self.assertGreater(
+            column["client"], 0, "the column has no height, so the view switch did not happen"
+        )
+        self.assertEqual(
+            [panel["name"] for panel in column["panels"]],
+            ["check", "ledger", "metrics", "squads"],
+            "the analyst column is not the four panels the page says it is",
+        )
+
+        for panel in column["panels"]:
+            with self.subTest(panel=panel["name"]):
+                self.assertTrue(
+                    panel["whole"],
+                    f"{panel['name']} is never wholly inside the column at any scroll position",
+                )
+                self.assertGreater(panel["positions"], 0, f"{panel['name']} was never measured")
+                self.assertEqual(
+                    panel["covered"],
+                    0,
+                    f"{panel['name']} was covered at {panel['covered']} of its on-screen positions",
+                )
+
+        # A scrollport only a pointer can scroll is half a control, so the column carries
+        # a tab stop while it has something to scroll — and the whole point of it is that
+        # Safari, which does not focus scroll containers by itself, gets the same control.
+        self.assertEqual(column["tabindex"], "0", "the column cannot be reached by keyboard")
+        self.assertEqual(column["role"], "region")
+        self.assertTrue(column["label"], "the focusable column has no accessible name")
+
+        # And it is scrolled by the gesture a reader makes, not only by `scrollTop`.
+        wheel = column["wheel"]
+        self.assertGreater(wheel["columnMoved"], 0, "the wheel over the column does not scroll it")
+        self.assertTrue(
+            wheel["pageMoved"],
+            "the wheel at the end of the column is swallowed instead of scrolling the page",
+        )
 
     # ----------------------------------------------------------- the one light -- */
 
