@@ -39,17 +39,40 @@ const live = new Set();
 let frame = 0;
 let previous = 0;
 
+/* Whether this loop is inside its own step right now.
+
+   A value's `onChange` is allowed to move another value — the wake slider hands its own
+   handle's velocity to a second spring on every step, which is how the wake is drawn from
+   the speed the handle is travelling at — and that lands back in `wake()` while the loop
+   is mid-step. Without this flag `wake()` cannot tell that the loop is already here: it
+   clears `frame` on entry, so the re-entry schedules a *second* chain on top of the one
+   the end of the step is about to schedule. Two chains become four, four become eight, and
+   the page ends up running its controls hundreds of times a second instead of once a
+   frame — a replay that cannot hold sixty frames and answers a click a fifth of a second
+   late, from a loop that was meant to cost nothing when nobody was touching it.
+
+   While the flag is up, the step in progress owns the next frame; `wake()` has nothing to
+   do. */
+let draining = false;
+
 function drain(now) {
   frame = 0;
+  draining = true;
   const dt = previous ? Math.min((now - previous) / 1000, 1 / 20) : 1 / 60;
   previous = now;
-  for (const value of Array.from(live)) value.step(dt);
-  if (live.size) frame = requestAnimationFrame(drain);
-  else previous = 0;
+  /* `finally` for the next frame as much as for the step: a value that throws must not
+     leave the flag up, because a loop that thinks it is still stepping never steps again. */
+  try {
+    for (const value of Array.from(live)) value.step(dt);
+  } finally {
+    draining = false;
+    if (live.size) frame = requestAnimationFrame(drain);
+    else previous = 0;
+  }
 }
 
 function wake() {
-  if (frame) return;
+  if (frame || draining) return;
   previous = 0;
   frame = requestAnimationFrame(drain);
 }

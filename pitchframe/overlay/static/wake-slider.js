@@ -49,6 +49,12 @@ const MIN_REACH = 1.5;
 /* Below this the wake is not merely small, it is flat, and the track stops being written
    to until something moves again. */
 const FLAT = 0.002;
+/* How much a bar's lift has to change before its height is rewritten. The wake is a
+   handful of bars wide and the track is sixty-four, so writing all of them every frame is
+   mostly writing where nothing is lifted — and each of those writes is a style
+   invalidation. Below this the difference is under a hundredth of a pixel at the sizes
+   this control is drawn at. */
+const LIFT_EPS = 0.002;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const smoothstep = (s) => s * s * (3 - 2 * s);
@@ -151,6 +157,10 @@ export function createWakeSlider(host, options = {}) {
 
   let target = toPct(value, min, max);
   let lastAmp = 0;
+  /* The lift each bar was last drawn at, so that the paint below can skip the ones whose
+     height did not change. `-1` is "never drawn", which is what makes the first paint
+     write every bar and no later one repeat it. */
+  const drawn = new Float32Array(bars).fill(-1);
 
   const speed = new Value(0, { onChange: () => paint() });
   const head = new Value(target, {
@@ -186,6 +196,12 @@ export function createWakeSlider(host, options = {}) {
       const d = i - h;
       const R = d * dir < 0 ? behind : ahead;
       const lift = Math.abs(d) < R ? amp * Math.cos((Math.PI * d) / (2 * R)) ** 2 : 0;
+      /* The wake is a handful of bars wide, so the same two writes for the same sixty-four
+         bars every frame is mostly writing where nothing is lifted. A bar leaves the wake
+         as another enters it, and both are written here because both changed: the one that
+         dropped back to rest is written at zero rather than merely left alone. */
+      if (Math.abs(lift - drawn[i]) < LIFT_EPS) continue;
+      drawn[i] = lift;
       bar.style.transform = `scaleY(${rest + lift * (1 - rest)})`;
       crestNodes[i].style.opacity = String(lift);
     }
