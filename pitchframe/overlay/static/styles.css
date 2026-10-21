@@ -222,6 +222,22 @@ a.skip:focus {
    controls at the end of this file). Only the boxes they live in are this page's. */
 .seg { display: inline-flex; }
 
+/* The page's own title: the match this address replays. The catalogue's `<h1>` is the same
+   scale and the same face; this one also carries the wordmark's treatment, because the
+   first thing a shared link opens on should answer the pointer rather than sit still
+   (static/text-pressure.js). The size is the page's, not the component's fill-the-box
+   rule — `fit` is off wherever this is mounted — and the weight rests at 500, which is
+   where the stylesheet puts it. */
+.title {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: clamp(1.5rem, 3.2vw, 2.4rem);
+  line-height: 1.1;
+  letter-spacing: -.01em;
+  text-transform: uppercase;
+  color: var(--chalk);
+}
+
 /* ---------------------------------------------------------------- match bar -- */
 
 .board {
@@ -424,14 +440,70 @@ body[data-playing="true"] .clock__state::before { animation: pulse 1.9s ease-in-
   align-self: stretch;
 }
 
-.side__pin,
-.side > .rail {
+/* The analyst column, pinned as one thing.
+
+   It holds everything the analyst reads — the check, the ledger, the metrics and the
+   line-ups — and not just the first two, because of what a sticky column does to what
+   follows it: a pin covers the rest of its own column as the page scrolls, so the rail
+   that used to stand after the pin slid up underneath the check panel and the ledger and
+   could not be read at all. Inside the pin there is nothing after it to cover.
+
+   The four panels are taller than a laptop window — a check, a ledger, a twenty-row table
+   and two squads — so the pin is also the column's own scrollport: bounded by the window
+   and allowed to scroll inside itself. Without that, a pin taller than the window would
+   have its bottom below the fold for the whole page and its top gone by the time that
+   bottom could be reached — the metrics would be as unreadable as they were when the rail
+   passed underneath the pin. With it, every panel is reachable while the commentary keeps
+   its pinned column, and the page itself still scrolls the feed.
+
+   Nothing is cut by the scrollport: the glow port draws all three layers *inside* a panel's
+   own boundary (`--glow-padding` is 0 and the layer is inset 0), so a panel leaving the top
+   of the column is clipped along its own edge, exactly as it is clipped by the window.
+   The 4px of padding, taken back by the negative margin, is for the focus rings of the
+   controls in those panels, which are drawn outside their boxes.
+
+   Scroll chaining is deliberately left alone: the wheel scrolls the column until it ends
+   and then the page, so a reader whose pointer happens to be over the column is never
+   trapped at the bottom of the line-ups with the commentary below them unreachable. */
+.side__pin {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  position: sticky;
+  top: .75rem;
+  z-index: 2;
+  /* `vh` first for a browser that has not learned `dvh`: an unbounded pin is the failure
+     this whole rule exists to prevent, so the older unit is a better answer than none. */
+  max-height: calc(100vh - 1.5rem);
+  max-height: calc(100dvh - 1.5rem);
+  padding: 4px;
+  margin: -4px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  /* The page's own rule colour, so the pane's scroll is visible as a hairline rather than
+     an operating system's grey slab on a night-coloured column. */
+  scrollbar-color: var(--rule) transparent;
+  scrollbar-gutter: stable;
+}
+
+/* Focused, the column says so on its own edge — drawn inside the box, because the box is
+   the scrollport and an outline outside it would be clipped by it. */
+.side__pin:focus-visible {
+  outline: 2px solid var(--chalk);
+  outline-offset: -3px;
+  border-radius: var(--radius);
+}
+
+/* A bounded flex column would otherwise shrink its children to fit it: the check panel
+   went from 253 pixels to 39 the first time the pin was given a height, because a flex
+   item's default is `flex-shrink: 1`. These are panels to scroll, not panels to squeeze. */
+.side__pin > * { flex: none; }
+
+.side__pin > .rail {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
-
-.side__pin { position: sticky; top: .75rem; z-index: 2; }
 
 body[data-view="fan"] .grid { grid-template-columns: minmax(0, 1fr); }
 body[data-view="fan"] .side { display: none; }
@@ -2742,12 +2814,16 @@ body[data-view="analyst"] .promo { display: none; }
 @media (max-width: 1080px) {
   .grid { grid-template-columns: minmax(0, 1fr); }
 
-  /* A single column, so the wrapper dissolves and its two children are ordered against
-     the feed directly: the check leads, the commentary follows, the rail closes. */
+  /* A single column, so both wrappers dissolve and their children are ordered against the
+     feed directly: the check and the ledger lead, the commentary follows, the rail closes.
+     `display: contents` rather than an order on the pin, because the pin now holds the
+     rail too and ordering it as one block would put the metrics before the feed. */
   .side { display: contents; }
-  .side__pin { position: static; order: 1; }
+  .side__pin { display: contents; }
+  .side__pin > .check,
+  .side__pin > .ledger { order: 1; }
   .grid > .feed { order: 2; }
-  .side > .rail { order: 3; }
+  .side__pin > .rail { order: 3; }
 
   .check[data-state="idle"] { display: none; }
 }

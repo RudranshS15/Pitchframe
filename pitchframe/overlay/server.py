@@ -117,15 +117,20 @@ def _seed_for(scenario_key: str) -> int:
 
 
 def _named(key: str, request: Request) -> RedirectResponse:
-    """Send a numbered address to the name of that match, keeping everything else.
+    """Send an address that describes its match in the query to that match's own name.
 
     A link already handed out keeps working; what it lands on is the address that says
     which match it is, and the rest of the query string — the view, the second, the open
-    build-up, the fault — travels with it, because those describe the frame and not the
-    match. ``seed`` itself is dropped: it is the thing the name replaces, and a URL that
-    carried both would be two descriptions of one match.
+    build-up, the fault, the match id — travels with it, because those describe the frame
+    and not the match. The two parameters that *are* the match are dropped: ``seed`` and
+    ``scenario`` are what the name in the path replaces, and a URL carrying both would be
+    two descriptions of one thing.
     """
-    rest = [(name, value) for name, value in request.query_params.multi_items() if name != "seed"]
+    rest = [
+        (name, value)
+        for name, value in request.query_params.multi_items()
+        if name not in {"seed", "scenario"}
+    ]
     query = urlencode(rest)
     return RedirectResponse(f"/match/{key}" + (f"?{query}" if query else ""), status_code=308)
 
@@ -209,15 +214,38 @@ def create_app() -> FastAPI:
 
         Which match is in the path and not in the query, so that a link says what it is:
         ``/match/quiet`` rather than ``/match?seed=7``. Nothing gaps there — a bare
-        ``/match`` goes to the default scenario's name, and a numbered address that names
-        a catalogued match is redirected to its name, so every link this server serves
-        ends up at one address per match. A seed that is not in the catalogue has no name
-        to go to and is served as it always was: ``/match?seed=99`` still opens a match,
-        which is the promise that made ``--seed`` worth having.
+        ``/match`` goes to the default scenario's name, a ``scenario=`` that names one of
+        the catalogue's matches goes to that match's name, and a numbered address that
+        names a catalogued match is redirected to its name, so every link this server
+        serves ends up at one address per match. In each of those the rest of the query
+        string travels: the frame is what a reader shares, and a redirect that dropped
+        ``at`` or ``view`` would answer with a different frame than the one asked for.
+
+        A seed that is not in the catalogue has no name to go to and is served as it
+        always was: ``/match?seed=99`` still opens a match, which is the promise that made
+        ``--seed`` worth having. An unknown *name* is served the same way, and the replay
+        endpoint is what refuses it with the names there are — better a page that says the
+        name is wrong than one that quietly opened a different match.
         """
+        named = request.query_params.get("scenario")
         numbered = request.query_params.get("seed")
+        if named is not None and numbered is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="ask for a match by name or by number, not both",
+            )
+        if named is not None:
+            if named in ALL_SCENARIOS:
+                return _named(named, request)
+            # An unknown name is served rather than redirected to a match it does not
+            # name: the replay endpoint answers 400 with the names there are, and a page
+            # that said so is better than one that silently opened the default.
+            return FileResponse(_STATIC_DIR / "match.html")
         if numbered is None:
-            return RedirectResponse(f"/match/{DEFAULT_SCENARIO_KEY}", status_code=308)
+            # The frame a reader is looking at survives the move to the default's own
+            # address: `at`, `view`, `goal` and the fault describe the replay, not which
+            # one it is, and a shared link is exactly those parameters.
+            return _named(DEFAULT_SCENARIO_KEY, request)
         try:
             seed = int(numbered)
         except ValueError:

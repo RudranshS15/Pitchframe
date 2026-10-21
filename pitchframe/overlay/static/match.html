@@ -63,6 +63,15 @@
     </div>
   </header>
 
+  <!-- -------------------------------------------------------------- the title -->
+  <!-- The page's own `<h1>`, and the one line the payload supplies: the match's name,
+       written the way the board writes it, once the replay has arrived. It is a pressure
+       host (static/text-pressure.js) mounted by app.js, so the first line a shared link
+       opens on answers the pointer. Before the replay arrives — or if it never does — it
+       says what the page is rather than guessing a match, which is the same rule the
+       board's two names follow. -->
+  <h1 class="title" id="match-title">Verified match feed</h1>
+
   <!-- --------------------------------------------------------------- match bar -->
   <!-- `data-glow` marks a panel whose boundary lights up where the pointer is near it, and
        every panel on this page carries it: this bar, the ratings, the feed, the check, the
@@ -188,8 +197,14 @@
          screen, where the column stacks, the verification leads the page. -->
     <div class="side">
 
-    <!-- Pinned as a pair: the claim being checked, and the running tallies. Those two
-         are what an analyst wants in view while the commentary scrolls. -->
+    <!-- Pinned as one column: the claim being checked, the running tallies, and the rail
+         under them. The check and the ledger are what an analyst wants in view while the
+         commentary scrolls — and the rail has to be inside the pin rather than after it.
+         A sticky column only ever covers what follows it in the same column: the metrics
+         and the line-ups used to come after the pin, so as the page scrolled they slid up
+         underneath the check panel and the ledger and could not be read at all. Held inside
+         a pin bounded by the viewport, they are on screen from the start and scroll inside
+         the column when the column is taller than the window. -->
     <div class="side__pin">
 
     <!-- ------------------------------------------------ the signature: the check -->
@@ -226,9 +241,10 @@
           Caught counts claims the measurement contradicted.
         </p>
       </section>
-    </div>
 
     <!-- ------------------------------------------------------------- the rail -->
+    <!-- Inside the pin, because a pinned column covers whatever follows it: see the note
+         on the pin above. -->
     <aside class="rail" aria-label="Analysis">
 
       <section class="metrics" aria-label="Metric readings" data-glow>
@@ -259,6 +275,7 @@
         </p>
       </section>
     </aside>
+    </div>
     </div>
   </main>
 

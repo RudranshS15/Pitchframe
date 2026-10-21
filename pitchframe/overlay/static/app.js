@@ -98,6 +98,7 @@ import { createWakeSlider } from "./wake-slider.js";
   const $ = (id) => document.getElementById(id);
   const el = {
     provider: $("provider"), providerText: $("provider-text"),
+    matchTitle: $("match-title"),
     teamHome: $("team-home"), teamAway: $("team-away"),
     score: $("score"), clock: $("clock"), clockState: $("clock-state"),
     shareBar: $("share-bar"), shareHome: $("share-home-pct"), shareAway: $("share-away-pct"),
@@ -343,11 +344,34 @@ import { createWakeSlider } from "./wake-slider.js";
     return found;
   }
 
+  /* The board is redrawn on every frame of the replay, and almost every one of those
+     frames has nothing to say: the clock ticks sixty times a second while the payload
+     moves in five-minute windows, so the minute label changes once a second and the
+     metrics, the ledger and the share of possession change once every five.
+
+     Writing all of it anyway is what made the page slow to answer under its own
+     animation — sixty rebuilds a second of a twenty-row table, each one a parse and a
+     forced layout — so each part of the board is written only when the thing it shows
+     has changed. The minute and the scoreline are compared as the strings they are
+     written as, and everything that is a function of the analysed frame is keyed on the
+     frame itself: `latestFrame` hands back the same object until a new window is
+     reached, so that comparison is the question "has the payload moved".
+
+     The rule is the one the dock's goal count and the launcher already follow — a panel
+     is rebuilt when what it describes changes, never once per frame. */
+  let shownMinute = null;
+  let shownScoreline = null;
+  let shownFrame = null;
+
   function renderBoard(clock) {
     const doc = state.doc;
     const minute = Math.min(minuteOf(Math.max(clock, 0)), 90 + Math.floor(Math.max(0, clock - 5400) / 60));
 
-    el.clock.innerHTML = `${minute}<i>&prime;</i>`;
+    const minuteLine = `${minute}<i>&prime;</i>`;
+    if (minuteLine !== shownMinute) {
+      shownMinute = minuteLine;
+      el.clock.innerHTML = minuteLine;
+    }
 
     const goals = doc.goals.filter((g) => g.clock <= clock);
     const home = goals.filter((g) => g.team === "home").length;
@@ -360,29 +384,38 @@ import { createWakeSlider } from "./wake-slider.js";
       dockGoals = goals.length;
       renderDock();
     }
-    el.score.innerHTML = `${home}<i>–</i>${away}`;
-    el.score.setAttribute("aria-label", `Score ${home} to ${away}`);
+    const scoreline = `${home}<i>–</i>${away}`;
+    if (scoreline !== shownScoreline) {
+      shownScoreline = scoreline;
+      el.score.innerHTML = scoreline;
+      el.score.setAttribute("aria-label", `Score ${home} to ${away}`);
+    }
 
     const frame = latestFrame(clock);
-    const possession = frame
-      ? frame.readings.find((r) => r.key === "possession_share@home")
-      : null;
-    const share = possession ? possession.value : 0.5;
-    el.shareBar.style.width = `${(share * 100).toFixed(1)}%`;
-    el.shareHome.textContent = possession ? `${(share * 100).toFixed(0)}%` : "–";
-    el.shareAway.textContent = possession ? `${((1 - share) * 100).toFixed(0)}%` : "–";
+    if (frame !== shownFrame) {
+      shownFrame = frame;
 
-    renderLedger(frame);
-    renderRatings(frame);
+      const possession = frame
+        ? frame.readings.find((r) => r.key === "possession_share@home")
+        : null;
+      const share = possession ? possession.value : 0.5;
+      el.shareBar.style.width = `${(share * 100).toFixed(1)}%`;
+      el.shareHome.textContent = possession ? `${(share * 100).toFixed(0)}%` : "–";
+      el.shareAway.textContent = possession ? `${((1 - share) * 100).toFixed(0)}%` : "–";
+
+      renderLedger(frame);
+      renderRatings(frame);
+
+      if (frame) {
+        const claimed = new Set(frame.feed.map((r) => r.metric));
+        renderMetrics(frame, claimed);
+      } else {
+        renderMetrics(null, new Set());
+      }
+    }
+
     renderAward();
     renderLauncher();
-
-    if (frame) {
-      const claimed = new Set(frame.feed.map((r) => r.metric));
-      renderMetrics(frame, claimed);
-    } else {
-      renderMetrics(null, new Set());
-    }
   }
 
   function renderLedger(frame) {
@@ -397,11 +430,44 @@ import { createWakeSlider } from "./wake-slider.js";
       : `${ledger.verified} line${ledger.verified === 1 ? "" : "s"} published, each one checked against the event stream.`;
   }
 
+  /* ------------------------------------------------------- the analyst column ---- */
+
+  /* The analyst column is a scrollport, and a scrollport only a pointer can scroll is half
+     a control. Chrome, Edge and Firefox make scroll containers focusable by themselves;
+     Safari does not, so the column is given a tab stop here — but only while it has
+     something to scroll. A focusable box with nothing left to reach is a tab stop that
+     does nothing, which is worse than the one it replaces.
+
+     Only the attribute writes are conditional, not the measurement: `scrollHeight` and
+     `clientHeight` on an element outside the layout are two zeroes, and two zeroes are
+     cheap. It is called where the column's content changes and when the window does. */
+  const column = document.querySelector(".side__pin");
+  let columnScrolls = null;
+
+  function syncColumnAccess() {
+    if (!column) return;
+    const scrolls = column.scrollHeight > column.clientHeight + 1;
+    if (scrolls === columnScrolls) return;
+    columnScrolls = scrolls;
+    if (scrolls) {
+      column.tabIndex = 0;
+      column.setAttribute("role", "region");
+      column.setAttribute("aria-label", "Analysis column");
+    } else {
+      column.removeAttribute("tabindex");
+      column.removeAttribute("role");
+      column.removeAttribute("aria-label");
+    }
+  }
+
+  window.addEventListener("resize", syncColumnAccess);
+
   function renderMetrics(frame, claimedKeys) {
     if (!frame || !frame.readings.length) {
       el.metricsBody.innerHTML = "";
       el.metricsWindow.textContent = "";
       el.metricsEmpty.hidden = false;
+      syncColumnAccess();
       return;
     }
     el.metricsEmpty.hidden = true;
@@ -430,6 +496,7 @@ import { createWakeSlider } from "./wake-slider.js";
         </tr>`;
       })
       .join("");
+    syncColumnAccess();
   }
 
   function renderSquads(doc) {
@@ -448,6 +515,7 @@ import { createWakeSlider } from "./wake-slider.js";
           </div>`;
       })
       .join("");
+    syncColumnAccess();
   }
 
   /* ------------------------------------------------------------ the ratings ---- */
@@ -914,6 +982,9 @@ import { createWakeSlider } from "./wake-slider.js";
     viewSeg.set({ value: view });
     writeShare();
     renderDock();
+    /* The column is only laid out in the analyst view, so switching into it is the moment
+       its tab stop becomes meaningful (and switching out is when it must go). */
+    syncColumnAccess();
   }
 
   function setSpeed(speed) {
@@ -1086,23 +1157,26 @@ import { createWakeSlider } from "./wake-slider.js";
     setSpeed(1);
     el.footUrl.textContent = location.origin + location.pathname;
 
-    /* The two names on the scoreboard. Mounted before the fetch because the span already
-       carries the word "Home" in the markup, and a reader whose server is not running
-       should still see a scoreboard rather than an empty pair of slots: the component is
-       mounted on what is there, and the payload replaces it when it arrives. */
-    const teamNames = [el.teamHome, el.teamAway].map((host) =>
-      createTextPressure(host, {
-        /* The board's own type scale, not the component's fill-the-container rule: the
-           names are a scoreboard's labels, sized by the layout like everything beside
-           them. Oswald's weight axis is the range this face has; the stylesheet rests
-           these at 500, so the pressure runs either side of it. */
-        fit: false,
-        radius: 0.5,
-        smoothing: 0.4,
-        clickRipple: false,
-        weightRange: [400, 700]
-      })
-    );
+    /* The page's title, and the two names on the scoreboard. Mounted before the fetch
+       because the spans already carry their words in the markup, and a reader whose server
+       is not running should still see a title and a scoreboard rather than empty slots: the
+       component is mounted on what is there, and the payload replaces it when it arrives.
+
+       The title takes the wordmark's own treatment, because it is the page's wordmark — the
+       first thing a shared link opens on. `fit` is off everywhere here: these are a page
+       title and a scoreboard's labels, sized by the layout like everything beside them.
+       Oswald's weight axis is the range this face has; the stylesheet rests them at 500, so
+       the pressure runs either side of it. */
+    const pressure = (host, radius, smoothing) => createTextPressure(host, {
+      fit: false,
+      radius,
+      smoothing,
+      clickRipple: false,
+      weightRange: [400, 700]
+    });
+
+    const title = pressure(el.matchTitle, 0.55, 0.35);
+    const teamNames = [el.teamHome, el.teamAway].map((host) => pressure(host, 0.5, 0.4));
 
     /* Asked for by name when the address has one, and by number otherwise, which are the
        two ways a match can be described. Neither is invented here: a page that guessed a
@@ -1144,6 +1218,9 @@ import { createWakeSlider } from "./wake-slider.js";
     state.maxClock = doc.frames[doc.frames.length - 1].clock;
 
     document.title = `${doc.home} v ${doc.away} — Pitchframe`;
+    /* The title and the tab say the same thing, and the board keeps the two names apart
+       because the score sits between them. */
+    title.setText(`${doc.home} v ${doc.away}`);
     teamNames[0].setText(doc.home);
     teamNames[1].setText(doc.away);
     el.footMatch.textContent =

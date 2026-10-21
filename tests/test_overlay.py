@@ -896,6 +896,62 @@ class TestTheNamedMatches(unittest.TestCase):
         self.assertEqual(response.headers["location"], f"/match/{DEFAULT_SCENARIO_KEY}")
         self.assertEqual(self.client.get(response.headers["location"]).status_code, 200)
 
+    def test_the_frame_survives_the_move_to_the_default_s_name(self) -> None:
+        """What a reader shares is the query, and a redirect that dropped it would answer
+        with a different frame than the one asked for — the same match at minute zero, in
+        the fan view, with no build-up open.
+
+        The frame parameters are exactly the ones the page itself writes into the URL, so
+        this is the address a copy of the address bar produces.
+        """
+        response = self.client.get(
+            "/match?view=analyst&at=3615&goal=12-26-home&fault=narrator-invert",
+            follow_redirects=False,
+        )
+        self.assertIn(response.status_code, (307, 308))
+        self.assertEqual(
+            response.headers["location"],
+            f"/match/{DEFAULT_SCENARIO_KEY}"
+            "?view=analyst&at=3615&goal=12-26-home&fault=narrator-invert",
+        )
+        followed = self.client.get(response.headers["location"])
+        self.assertEqual(followed.status_code, 200)
+        self.assertIn("text/html", followed.headers["content-type"])
+
+    def test_a_named_scenario_gets_the_address_that_names_it(self) -> None:
+        """`/match?scenario=chaos` used to be redirected to the default's name, which
+        dropped the name and quietly opened a different match — the one failure this
+        project treats as indistinguishable from a match nobody wanted."""
+        response = self.client.get("/match?scenario=quiet&at=600", follow_redirects=False)
+        self.assertIn(response.status_code, (307, 308))
+        self.assertEqual(response.headers["location"], "/match/quiet?at=600")
+        self.assertEqual(self.client.get(response.headers["location"]).status_code, 200)
+
+        # The default's own name, asked for the long way round, lands on itself and keeps
+        # the frame rather than losing it to a second redirect.
+        same = self.client.get(
+            f"/match?scenario={DEFAULT_SCENARIO_KEY}&view=analyst",
+            follow_redirects=False,
+        )
+        self.assertEqual(same.headers["location"], f"/match/{DEFAULT_SCENARIO_KEY}?view=analyst")
+
+    def test_an_unknown_name_is_not_answered_with_a_different_match(self) -> None:
+        """The page is served so the replay endpoint's refusal can be shown on it: 400 with
+        the names there are. A redirect to the default would look like a working link."""
+        page = self.client.get("/match?scenario=machday", follow_redirects=False)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("text/html", page.headers["content-type"])
+        refused = self.client.get("/api/replay?scenario=machday")
+        self.assertEqual(refused.status_code, 400)
+        self.assertIn("machday", refused.json()["detail"])
+
+    def test_a_name_and_a_number_on_one_address_are_refused(self) -> None:
+        """They can name different matches, and the replay endpoint already refuses the
+        pair. Redirecting on one of them would make the address bar the coin toss."""
+        response = self.client.get("/match?scenario=quiet&seed=28", follow_redirects=False)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("not both", response.json()["detail"])
+
     def test_a_name_that_does_not_exist_is_a_named_404(self) -> None:
         """Refused rather than quietly redirected to the default: a typo that served a
         different match would look like a match nobody wanted, and the reader would have no
@@ -1308,6 +1364,157 @@ class TestThePortedControls(unittest.TestCase):
         app = self.asset("/static/app.js")
         self.assertIn("seekQueued = window.setTimeout(", app)
         self.assertNotIn("requestAnimationFrame(() => {\n          seekFrame", app)
+
+    def test_the_analyst_column_is_one_pinned_column(self) -> None:
+        """A sticky box covers whatever follows it in its own column.
+
+        The rail used to stand after the pinned check and ledger, so the metrics and the
+        line-ups slid up underneath them and could not be read at all. They live inside the
+        pin now, and the pin is the column's own scrollport: the four panels are taller than
+        a laptop window, so a pin without one would hide its bottom below the fold. The
+        halo cannot be cut by that scrollport because the port draws it inside each panel's
+        own boundary — `--glow-padding` is 0 — which the browser harness asks for directly.
+        """
+        body = self.page()
+        pin = body.index('<div class="side__pin">')
+        rail = body.index('<aside class="rail"')
+        self.assertLess(pin, rail, "the rail is not inside the pinned column")
+        self.assertLess(
+            rail,
+            body.index("</div>", body.index("</aside>", rail)),
+            "the pinned column closes before the rail, so the pin covers it as the page scrolls",
+        )
+
+        css = self.asset("/static/styles.css")
+        rule = re.search(r"\.side__pin\s*\{(.*?)\}", css, re.S)
+        self.assertIsNotNone(rule, "no .side__pin rule in the stylesheet")
+        self.assertIn("position: sticky", rule.group(1))
+        self.assertIn("overflow-y: auto", rule.group(1), "the pin cannot scroll, so its bottom is unreachable")
+        self.assertIn("max-height", rule.group(1), "the pin is not bounded by the window")
+        self.assertIn("100dvh", rule.group(1), "the pin is bounded by a height that ignores the browser's chrome")
+        # An unbounded pin is the failure this rule exists to prevent, so the older unit is
+        # a better answer than none: it is declared first and `dvh` wins where it exists.
+        self.assertIn("max-height: calc(100vh - 1.5rem);", rule.group(1), "no fallback for a browser without dvh")
+        self.assertLess(
+            rule.group(1).index("100vh"),
+            rule.group(1).index("100dvh"),
+            "the fallback is written after the unit it is a fallback for",
+        )
+        self.assertIn("scrollbar-color", rule.group(1), "the column's scroll is an operating system's grey slab")
+        self.assertRegex(
+            css,
+            r"\.side__pin:focus-visible\s*\{[^}]*outline:",
+            "a keyboard reader cannot see which column has focus",
+        )
+
+        # A bounded flex column shrinks its children to fit it; these are panels to scroll.
+        self.assertRegex(
+            css,
+            r"\.side__pin\s*>\s*\*\s*\{\s*flex:\s*none;",
+            "the panel boxes are squeezed by the pinned column instead of scrolled",
+        )
+
+    def test_the_column_can_be_scrolled_without_a_pointer(self) -> None:
+        """Chrome, Edge and Firefox focus a scroll container by themselves; Safari does not.
+
+        So the page gives the column a tab stop and a name — but only while it has
+        something to scroll. A focusable box with nothing left in it is a tab stop that
+        does nothing, which is worse than the missing one it replaces, and that is why the
+        attributes are written from a measurement rather than into the markup.
+        """
+        app = self.asset("/static/app.js")
+        self.assertIn("function syncColumnAccess()", app, "nothing gives the column a tab stop")
+        self.assertIn("column.tabIndex = 0;", app)
+        self.assertIn('column.setAttribute("role", "region")', app)
+        self.assertIn('column.setAttribute("aria-label", "Analysis column")', app)
+        self.assertIn('column.removeAttribute("tabindex")', app, "the tab stop is never taken away")
+        self.assertIn("column.scrollHeight > column.clientHeight", app, "the tab stop is not measured")
+        self.assertGreaterEqual(
+            app.count("syncColumnAccess();"),
+            4,
+            "the column's height can change without the tab stop being reconsidered",
+        )
+        # One of those has to be the view switch: the column is only laid out in the
+        # analyst view, so entering and leaving it is when the tab stop matters most.
+        view = app.index("function setView(view)")
+        self.assertLess(view, app.index("syncColumnAccess();", view), "setView does not reconsider the tab stop")
+        self.assertLess(
+            app.index("syncColumnAccess();", view),
+            app.index("function setSpeed(", view),
+            "the column's tab stop is reconsidered outside setView",
+        )
+
+    def test_the_feed_has_a_title_with_the_wordmark_s_treatment(self) -> None:
+        """The page a shared link opens on has a title, and it moves.
+
+        The catalogue has an `<h1>` and the feed had none — the first thing a reader met
+        was a scoreboard, and the match's name existed only in the tab and the footer. The
+        heading is the page's own; the words are the payload's, replaced when the replay
+        arrives, so a failed fetch leaves a title that is true instead of a guess.
+        """
+        body = self.page()
+        self.assertIn('<h1 class="title" id="match-title">', body)
+        self.assertLess(
+            body.index('<h1 class="title"'),
+            body.index('<section class="board"'),
+            "the title is not the first thing above the match bar",
+        )
+
+        css = self.asset("/static/styles.css")
+        title = re.search(r"\.title\s*\{(.*?)\}", css, re.S)
+        self.assertIsNotNone(title, "no .title rule in the stylesheet")
+        self.assertIn("font-family: var(--display)", title.group(1), "the title is not in the wordmark's face")
+        self.assertIn("text-transform: uppercase", title.group(1))
+
+        app = self.asset("/static/app.js")
+        self.assertIn("matchTitle: $(", app, "the title is not reached by the page's script")
+        self.assertRegex(
+            app,
+            r"const title = pressure\(el\.matchTitle",
+            "the title is not a pressure host, so the line a link opens on sits still",
+        )
+        self.assertIn("title.setText(`${doc.home} v ${doc.away}`)", app)
+
+    def test_a_panel_is_written_when_it_changed_and_not_once_a_frame(self) -> None:
+        """The replay redraws the board every frame, and the payload moves in windows.
+
+        Rebuilding the metrics table — twenty rows, four cells each — sixty times a second
+        was most of what the feed spent while it animated: measured on this machine, the
+        page was busy for 83% of the wall clock, its longest tasks ran over 100ms and a
+        100ms timer fired 250ms late. The guard is the fix, and it is the rule the dock's
+        goal count and the launcher already followed: a panel is rebuilt when what it
+        describes changes, never once per frame.
+        """
+        app = self.asset("/static/app.js")
+        self.assertIn("if (frame !== shownFrame) {", app, "the frame-dependent panels are unguarded")
+        self.assertIn("if (minuteLine !== shownMinute) {", app, "the clock is rewritten every frame")
+        self.assertIn("if (scoreline !== shownScoreline) {", app, "the score is rewritten every frame")
+        # The first write to the table after the board's own definition has to be behind
+        # the guard: a call before it is a call on the per-frame path.
+        board = app.index("function renderBoard(")
+        guard = app.index("if (frame !== shownFrame) {", board)
+        self.assertLess(guard, app.index("renderMetrics(", board), "the metrics are written outside the guard")
+
+    def test_the_value_loop_cannot_schedule_a_second_chain(self) -> None:
+        """What one frame of animation actually cost before this guard existed.
+
+        A value may move another value from its own `onChange` — the wake slider hands its
+        handle's velocity to a second spring on every step — and that lands back in
+        `wake()` while the loop is mid-step. `frame` is cleared on entry, so without a flag
+        the re-entry schedules a second chain on top of the one the end of the step is
+        about to schedule: two become four, four become eight, and the page runs its
+        controls hundreds of times a second. Measured, that was 45 long tasks in eight
+        seconds of playback, a frame every 42ms and a click answered 167ms late; with the
+        guard it is one long task, 21ms frames and a 1ms press.
+        """
+        runtime = self.asset("/static/motion.js")
+        self.assertIn("if (frame || draining) return;", runtime, "wake() can start a second chain")
+        self.assertIn("draining = true;", runtime)
+        self.assertRegex(
+            runtime,
+            r"\} finally \{\s*draining = false;",
+            "a value that throws leaves the loop asleep",
+        )
 
     def test_a_slot_can_be_chosen_without_a_pointer(self) -> None:
         """Space, Enter and a screen reader all activate a slot by firing a click, and this
