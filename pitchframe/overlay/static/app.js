@@ -499,19 +499,38 @@ import { createWakeSlider } from "./wake-slider.js";
     syncColumnAccess();
   }
 
+  /* The team sheet: the eleven who started, then the substitutes. The bench is drawn
+     from its own list in the payload rather than from the end of one merged roster,
+     because a substitute did not play: the ratings do not score them, the scoreboard
+     does not name them, and a merged list would invite a page to pretend otherwise.
+
+     The position is shown beside each name — it was in the payload from the start and
+     the panel only printed the shirt and the name, which is a list of people rather
+     than a team sheet. */
   function renderSquads(doc) {
+    const rows = (players, modifier = "") => (players || [])
+      .map((p) => `<li class="squads__player${modifier}">
+          <span class="squads__shirt">${esc(p.shirt)}</span>
+          <span>${esc(p.name)}</span>
+          <span class="squads__pos">${esc(p.position)}</span>
+        </li>`)
+      .join("");
+
     el.squads.innerHTML = ["home", "away"]
       .map((side) => {
-        const players = (doc.squads[side] || [])
-          .map((p) => `<li class="squads__player">
-              <span class="squads__shirt">${esc(p.shirt)}</span>
-              <span>${esc(p.name)}</span>
-            </li>`)
-          .join("");
+        const bench = doc.bench ? doc.bench[side] : [];
         const name = side === "home" ? doc.home : doc.away;
+        /* A payload from a server that predates the bench has no substitutes to draw,
+           and the heading is omitted rather than printed over an empty list. */
+        const substitutes = bench && bench.length
+          ? `<p class="squads__role">Substitutes</p>
+             <ul class="squads__list squads__list--bench">${rows(bench, " squads__player--sub")}</ul>`
+          : "";
         return `<div class="squads__team">
             <h3>${esc(name)}</h3>
-            <ul class="squads__list">${players}</ul>
+            <p class="squads__role">Starting XI</p>
+            <ul class="squads__list">${rows(doc.squads[side])}</ul>
+            ${substitutes}
           </div>`;
       })
       .join("");
@@ -884,7 +903,6 @@ import { createWakeSlider } from "./wake-slider.js";
     el.hlSvg.innerHTML = highlightMarkup(data);
     hl.routes = Array.from(el.hlSvg.querySelectorAll(".hl__route"));
     hl.ball = el.hlSvg.querySelector("#hl-ball");
-
     if (!el.hl.open) el.hl.showModal();
     /* The match clock runs behind a modal, which is a distraction at best. Pressing
        play again is one click and stays the reader's decision. */

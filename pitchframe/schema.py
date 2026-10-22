@@ -88,11 +88,19 @@ class Player:
 
 @dataclass(frozen=True, slots=True)
 class Squad:
-    """One team's roster."""
+    """One team's roster: the eleven who started, and the bench behind them.
+
+    ``bench`` is separate from ``players`` on purpose. Everything that measures a match
+    — the ratings, the event stream, the man of the match — reads the eleven who played;
+    a substitute who never came on has no events to rate, and folding them into
+    ``players`` would invent a mark for a player the match never used. The bench is on
+    the team sheet because a roster without its substitutes is half a team sheet.
+    """
 
     team: Team
     name: str
     players: tuple[Player, ...]
+    bench: tuple[Player, ...] = ()
 
     def by_id(self, player_id: str) -> Player | None:
         """Look a player up by id, or ``None`` if they are not in this squad."""

@@ -296,6 +296,23 @@ out.feed.heading = await evaluate(`(() => {
    (see the column probe below), and a panel scrolled against its edge is clipped along
    its own boundary, which is what the window does too. Opacity and filter are reported
    whatever the padding: they change how the panel is composited, not where it is. */
+/* The team sheet. Both squads carry the eleven who started and the five behind them, and
+   the panel has to show both: a roster that names only the starters is half a team sheet,
+   and a bench merged into the starters would read as sixteen players on the pitch. The
+   positions are read too — they were in the payload and the panel used not to print them,
+   which is a list of names rather than a team sheet. */
+out.feed.teamSheet = await evaluate(`(() => {
+  const teams = [...document.querySelectorAll('.squads__team')];
+  return {
+    teams: teams.length,
+    roles: [...document.querySelectorAll('.squads__role')].map((el) => el.textContent.trim()),
+    starters: document.querySelectorAll('.squads__list:not(.squads__list--bench) .squads__player').length,
+    substitutes: document.querySelectorAll('.squads__player--sub').length,
+    positions: document.querySelectorAll('.squads__pos').length,
+    names: [...document.querySelectorAll('.squads__player--sub')].map((el) => el.textContent.replace(/\\s+/g, ' ').trim())
+  };
+})()`);
+
 out.feed.clippingAncestors = await evaluate(`(() => {
   const out = [];
   for (const el of document.querySelectorAll('[data-glow]')) {

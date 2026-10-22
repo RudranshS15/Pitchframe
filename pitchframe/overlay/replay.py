@@ -41,7 +41,7 @@ from ..highlights import build_highlights
 from ..llm.provider import select_tier
 from ..ratings import ratings_frame, ratings_payload
 from ..scenarios import DEFAULT_SEED
-from ..schema import Match, MatchEvent, Squad, Team
+from ..schema import Match, MatchEvent, Player, Squad, Team
 from ..stats import Window
 from .commentary import compose, incident_clause
 
@@ -170,6 +170,10 @@ class Replay:
     home: str
     away: str
     squads: dict[str, list[dict[str, Any]]]
+    #: The substitutes, by side. Separate from ``squads`` because they are separate on
+    #: a team sheet: they did not play, so no frame rates them, and a page that merged
+    #: the two lists would show a mark against a player who never touched the ball.
+    bench: dict[str, list[dict[str, Any]]]
     window_seconds: int
     fault: str
     provider: dict[str, Any]
@@ -391,10 +395,16 @@ def _rows_for(
     return tuple(rows)
 
 
-def _squad_payload(squad: Squad) -> list[dict[str, Any]]:
+def _squad_payload(players: tuple[Player, ...]) -> list[dict[str, Any]]:
+    """One list of players, as the page reads it.
+
+    Takes the players rather than the squad because the same shape describes both the
+    eleven who started and the bench behind them, and a payload that spelled them
+    differently would make the page keep two renderers for one team sheet.
+    """
     return [
         {"name": p.name, "shirt": p.shirt, "position": p.position, "id": p.id}
-        for p in squad.players
+        for p in players
     ]
 
 
@@ -518,7 +528,8 @@ def build_replay(
         match_id=match.id,
         home=home,
         away=away,
-        squads={"home": _squad_payload(match.home), "away": _squad_payload(match.away)},
+        squads={"home": _squad_payload(match.home.players), "away": _squad_payload(match.away.players)},
+        bench={"home": _squad_payload(match.home.bench), "away": _squad_payload(match.away.bench)},
         window_seconds=window_seconds,
         fault=fault,
         provider={

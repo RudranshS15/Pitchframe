@@ -419,6 +419,22 @@ minutes there was nothing on the page that said the panel existed at all. The la
 says what it is waiting for, dims itself while there is nothing to open, and lights up
 the moment a goal lands — and `G` reaches it from the keyboard.
 
+### The team sheet
+
+The squads panel is a team sheet: the eleven who started, then the five substitutes behind
+them, each with a shirt number, a name and a position. The bench is carried in its own list
+in the payload (`Squad.bench`, `bench` beside `squads` in the replay document) rather than
+appended to the starting eleven. That is not tidiness: a substitute did not play, every
+frame's ratings cover exactly the eleven, and a merged roster would invite the page to put
+a mark against a player who never touched the ball.
+
+Adding substitutes did not change a single match. The bench names are drawn from a *copy*
+of the generator's random state, so the simulation that follows draws exactly the numbers
+it drew before there was a bench — which is why the named scenarios still produce the same
+goals at the same minutes. A bench that consumed five names from the shared stream would
+have shifted every decision after the squads were built, and invalidated every recorded
+figure in this document.
+
 ### The ratings and the award
 
 `pitchframe/ratings.py` gives every player in both squads a mark out of ten, the

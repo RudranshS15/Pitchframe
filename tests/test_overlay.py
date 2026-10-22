@@ -2333,5 +2333,55 @@ class TestTheKeyboard(unittest.TestCase):
         self.assertIn('if (document.querySelector("[data-dock-menu]")) return;', app)
 
 
+@requires_server
+class TestTheTeamSheet(unittest.TestCase):
+    """A roster without its substitutes is half a team sheet, and the page has to show
+    both: the payload has to carry the bench, and the panel has to draw it from there
+    rather than from a list of its own.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.client = TestClient(create_app())
+        cls.doc = cls.client.get("/api/replay?scenario=matchday").json()
+        cls.page = cls.client.get("/match/matchday").text
+        cls.app = cls.client.get("/static/app.js").text
+
+    def test_every_side_carries_its_own_bench(self) -> None:
+        """Eleven who started and five behind them, by name and by shirt, and no id in
+        both lists: a substitute who shared an id with a starter would draw a mark for a
+        player who never came on."""
+        for side in ("home", "away"):
+            with self.subTest(side=side):
+                starters = self.doc["squads"][side]
+                bench = self.doc["bench"][side]
+                self.assertEqual(len(starters), 11)
+                self.assertEqual(len(bench), 5)
+                self.assertFalse(
+                    {p["id"] for p in starters} & {p["id"] for p in bench},
+                    "a substitute shares an id with a starter",
+                )
+                self.assertFalse(
+                    {p["name"] for p in starters} & {p["name"] for p in bench},
+                    "a substitute shares a name with a starter",
+                )
+                for player in bench:
+                    self.assertTrue(player["name"] and player["position"])
+                    self.assertGreaterEqual(player["shirt"], 12)
+
+    def test_the_bench_is_not_rated(self) -> None:
+        """A mark is what a player did with the minutes they played; a substitute who
+        never came on has none, and folding the bench into the roster the ratings join
+        against would invent one."""
+        starters = {
+            p["id"] for side in ("home", "away") for p in self.doc["squads"][side]
+        }
+        bench = {
+            p["id"] for side in ("home", "away") for p in self.doc["bench"][side]
+        }
+        self.assertFalse(starters & bench)
+        last = self.doc["frames"][-1]["ratings"]["values"]
+        self.assertEqual(set(last), starters, "the ratings and the starting elevens disagree")
+
 if __name__ == "__main__":
     unittest.main()

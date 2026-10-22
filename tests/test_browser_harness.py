@@ -349,6 +349,29 @@ class BrowserHarnessTest(unittest.TestCase):
             "the wheel at the end of the column is swallowed instead of scrolling the page",
         )
 
+    # ---------------------------------------------------------- the team sheet -- */
+
+    def test_the_team_sheet_shows_both_benches(self) -> None:
+        """Eleven and five, per side, with the role that says which is which.
+
+        A roster that named only the starters would be a team sheet with half its team
+        missing; a bench folded into the starting list would read as sixteen players on
+        the pitch. The positions are asserted with them, because they were in the payload
+        and the panel used to print only the shirt and the name.
+        """
+        sheet = self.feed["teamSheet"]
+        self.assertEqual(sheet["teams"], 2, "the panel does not show two teams")
+        self.assertEqual(sheet["roles"].count("Starting XI"), 2)
+        self.assertEqual(sheet["roles"].count("Substitutes"), 2)
+        self.assertEqual(sheet["starters"], 22, "a side is not showing eleven starters")
+        self.assertEqual(sheet["substitutes"], 10, "the benches are missing or the wrong size")
+        self.assertEqual(sheet["positions"], 32, "some names are shown without a position")
+        self.assertEqual(
+            len(set(sheet["names"])),
+            sheet["substitutes"],
+            "the bench repeats a name",
+        )
+
     # ----------------------------------------------------------- the one light -- */
 
     def test_the_light_reaches_every_panel_by_distance(self) -> None:

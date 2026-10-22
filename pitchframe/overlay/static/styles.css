@@ -992,15 +992,32 @@ body[data-view="analyst"] .promo { display: none; }
 
 .squads__list { display: flex; flex-direction: column; gap: .12rem; }
 
+/* A team sheet, not a list of names: the eleven, then the five behind them. The role
+   labels are the page's smallest type because they are structure rather than content. */
+.squads__role {
+  margin-top: .45rem;
+  font-size: .56rem;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--flint);
+}
+
+.squads__team h3 + .squads__role { margin-top: 0; }
+
 .squads__player {
   display: grid;
-  grid-template-columns: 1.4rem 1fr;
+  grid-template-columns: 1.4rem minmax(0, 1fr) auto;
   gap: .3rem;
   font-size: .7rem;
   color: var(--chalk);
 }
 
+.squads__player--sub { color: var(--chalk); opacity: .82; }
+
 .squads__shirt { font-family: var(--mono); color: var(--flint); font-size: .66rem; }
+
+.squads__pos { font-family: var(--mono); font-size: .6rem; color: var(--flint); }
 
 /* The build-up launcher. The pad itself is a port (static/sling-button.js) and this is the
    page's frame around it: the pad, then the sentence saying what pulling it would open.

@@ -251,6 +251,16 @@ Second, **the panel labels its own provenance**: every highlight carries *synthe
 match*, and it never describes itself as footage or as tracking data, because it is
 neither. No dependency and no build step was added for any of it.
 
+### The team sheet
+
+The analyst column lists both teams as a team sheet: the eleven who started, then the
+five substitutes behind them, each with a shirt number, a name and a position. The bench
+is carried in its own list in the payload, not appended to the starting eleven — a
+substitute did not play, the ratings do not mark them, and a merged roster would invite
+the page to pretend otherwise. Adding them does not change a single match: the bench is
+drawn from a copy of the generator's random state, so the simulation that follows is
+byte-identical to the one before there were substitutes.
+
 ### The ratings and the man of the match
 
 Every player in both squads carries a mark out of ten, the tallies behind it, and a

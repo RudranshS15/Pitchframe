@@ -129,6 +129,12 @@ _SQUAD_NAMES = {
 
 _FORMATION = ("GK", "RB", "CB", "CB", "LB", "DM", "CM", "CM", "RW", "ST", "LW")
 
+#: The five on the bench, in the shirt numbers they wear. A team sheet names them and
+#: says what each one is, so the roster panel can show a bench rather than eleven names
+#: and an unexplained absence of the rest of the squad. They never appear in the event
+#: stream: no substitution model exists here, and inventing one would change every match.
+_BENCH_FORMATION = ("GK", "CB", "CM", "RW", "ST")
+
 _NAME_ONSETS = (
     "Al", "Bren", "Cas", "Dan", "Eri", "Fil", "Gor", "Hal", "Ivo", "Jas",
     "Kat", "Lor", "Mir", "Nik", "Osk", "Pav", "Ras", "Sil", "Tom", "Ver",
@@ -163,7 +169,33 @@ def _build_squad(rng: random.Random, team: Team) -> Squad:
                 shirt=index,
             )
         )
-    return Squad(team=team, name=_SQUAD_NAMES[team], players=tuple(players))
+
+    # The bench is drawn from a *copy* of the generator's state rather than the generator
+    # itself. Consuming five names here would shift every decision the simulation makes
+    # afterwards, and a match that changed when its substitutes were added would invalidate
+    # every named scenario, every recorded figure and every test that pins a goal minute.
+    bench_rng = random.Random()
+    bench_rng.setstate(rng.getstate())
+    bench: list[Player] = []
+    for offset, position in enumerate(_BENCH_FORMATION, start=len(players) + 1):
+        name = _player_name(bench_rng, used)
+        used.add(name)
+        bench.append(
+            Player(
+                id=f"{team[0].upper()}{offset:02d}",
+                name=name,
+                team=team,
+                position=position,
+                shirt=offset,
+            )
+        )
+
+    return Squad(
+        team=team,
+        name=_SQUAD_NAMES[team],
+        players=tuple(players),
+        bench=tuple(bench),
+    )
 
 
 def build_squads(rng: random.Random) -> tuple[Squad, Squad]:
