@@ -5,8 +5,8 @@ stream into explainable, personalised narratives.
 
 > **Status: working end to end.** The generator, the analytics engine, the claim
 > layer, the Narrator/Verifier loop, the live overlay, the goal build-up panel and
-> the player ratings with the man of the match are implemented and tested (525
-> tests; the ten that drive a real browser are behind a gate — see
+> the player ratings with the man of the match are implemented and tested (530
+> tests; the twelve that drive a real browser are behind a gate — see
 > [Development](#development)). See [Roadmap](#roadmap) for what is still open.
 
 ---
@@ -237,9 +237,12 @@ SVG, the ball carried along every touch in order, a step counter, a replay butto
 a 0.5×/1× speed toggle. The same panel opens from the dock's *Goal build-ups* menu and
 from the **launcher** on the match bar — the sling pad that is on the page from the
 first frame, dimmed until the replay has scored, so the panel is reachable before the
-first goal rather than only after it. The move summary beside it states the step count, the ball
-travel in the schema's own normalised units, the duration in seconds and the third of
-the pitch possession started in.
+first goal rather than only after it. When the match has more than one goal, the panel
+itself carries a chip per build-up it has reached, so a reader looking at the pitch can
+switch to another goal without going to the dock; with a single goal the row is absent,
+because a choice of one is not a choice. The move summary beside it states the step
+count, the ball travel in the schema's own normalised units, the duration in seconds and
+the third of the pitch possession started in.
 
 Two things about it are deliberate. First, **recorded touches and inferred ones are
 drawn differently** — a carry is a recorded event and is drawn solid and heavier than

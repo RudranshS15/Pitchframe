@@ -571,6 +571,72 @@ out.feed.column.wheel = await (async () => {
   return { columnMoved: Math.round(columnMoved), pageBefore, pageAfter, pageMoved: pageAfter > pageBefore + 1 };
 })();
 
+/* ------------------------------------------------------- the goal chooser --- */
+
+/* A match with five goals has five build-ups, and the panel used to offer only the newest
+   one — the others were reachable from the dock's menu, which is in the other corner of
+   the page. At full time every goal has been reached, so the panel should carry one chip
+   per goal, the newest pressed, and a click on the first should open that goal's move
+   while keeping the keyboard where it was. The dialog is dismissed afterwards: the layout
+   probe below measures the page, not a modal over it. */
+out.feed.highlight = await (async () => {
+  const read = () => evaluate(`(() => {
+    const dialog = document.querySelector('#hl');
+    const chips = [...document.querySelectorAll('#hl .hl__goal')];
+    return {
+      open: dialog.open,
+      title: document.querySelector('#hl-title').textContent.trim(),
+      chips: chips.map((chip) => ({
+        label: chip.textContent.replace(/\\s+/g, ' ').trim(),
+        pressed: chip.getAttribute('aria-pressed') === 'true',
+        key: chip.dataset.hlGoal
+      })),
+      pressedKey: (chips.find((chip) => chip.getAttribute('aria-pressed') === 'true') || {}).dataset?.hlGoal || null,
+      focus: document.activeElement ? document.activeElement.className || document.activeElement.tagName : null
+    };
+  })()`);
+
+  /* The keys belong to the page only while no control has focus, which is the page's rule
+     and not something this probe should work around by clicking first. */
+  await evaluate("document.activeElement && document.activeElement.blur && document.activeElement.blur(); true");
+  await press("g", "g", 71);
+  await sleep(700);
+  const before = await read();
+
+  const clickAt = async (selector) => {
+    const spot = await evaluate(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    })()`);
+    if (!spot) return false;
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", x: spot.x, y: spot.y, button: "left", clickCount: 1 });
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: spot.x, y: spot.y, button: "left", clickCount: 1 });
+    await sleep(700);
+    return true;
+  };
+
+  const switched = await clickAt("#hl .hl__goal");
+  const after = await read();
+  await clickAt("#hl-close");
+  await sleep(250);
+
+  return {
+    opened: before.open,
+    goals: before.chips.length,
+    labels: before.chips.map((chip) => chip.label),
+    pressed: before.chips.filter((chip) => chip.pressed).length,
+    beforeTitle: before.title,
+    switched,
+    afterTitle: after.title,
+    afterPressed: after.pressedKey,
+    firstChip: before.chips[0] ? before.chips[0].key : null,
+    focusKept: after.focus === "hl__goal",
+    dismissed: !(await evaluate("document.querySelector('#hl').open"))
+  };
+})();
+
 /* ------------------------------------------------------------- the layout --- */
 
 /* The one probe that writes to the markup (the column above moved the scroll position and

@@ -120,7 +120,7 @@ import { createWakeSlider } from "./wake-slider.js";
     awardReasons: $("award-reasons"), awardText: $("award-text"),
     launchTitle: $("launch-title"), launchNote: $("launch-note"), sling: $("sling"),
     squads: $("squads"), footMatch: $("foot-match"), footUrl: $("foot-url"),
-    hl: $("hl"), hlTitle: $("hl-title"), hlLabels: $("hl-labels"), hlSvg: $("hl-svg"),
+    hl: $("hl"), hlTitle: $("hl-title"), hlGoals: $("hl-goals"), hlLabels: $("hl-labels"), hlSvg: $("hl-svg"),
     hlStep: $("hl-step"), hlReplay: $("hl-replay"), hlClose: $("hl-close"),
     hlFigures: $("hl-figures"), hlFoot: $("hl-foot"),
   };
@@ -861,7 +861,47 @@ import { createWakeSlider } from "./wake-slider.js";
     return `<div class="hl__fig"><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
   }
 
+  /* Every goal the replay has reached, with its build-up, in match order. The same rule
+     the launcher and the dock follow: a goal the clock has not reached is not on offer,
+     because opening its panel would reveal a move before the scoreboard revealed the
+     goal it produced. */
+  function reachedBuildUps() {
+    if (!state.doc) return [];
+    const reached = state.doc.goals.filter((goal) => goal.clock <= state.clock);
+    return reached
+      .map((goal) => ({ goal, highlight: state.goals.get(goalKey(goal.clock, goal.team, goal.player)) }))
+      .filter((entry) => entry.highlight);
+  }
+
+  /* The chooser inside the panel: one chip per goal, shown only when there is more than
+     one build-up to choose between. With a single goal the panel already names it, and a
+     button whose only action is to reopen the panel that is open is not a control. */
+  function renderHlGoals() {
+    if (!el.hlGoals) return;
+    const entries = reachedBuildUps();
+    if (entries.length < 2) {
+      el.hlGoals.hidden = true;
+      el.hlGoals.replaceChildren();
+      return;
+    }
+    const current = hl.data ? goalKey(hl.data.clock, hl.data.team, hl.data.scorer) : null;
+    el.hlGoals.hidden = false;
+    el.hlGoals.innerHTML = entries
+      .map(({ goal }) => {
+        const key = goalKey(goal.clock, goal.team, goal.player);
+        return `<button type="button" class="hl__goal" data-hl-goal="${esc(key)}" aria-pressed="${key === current}">
+          <span class="hl__goal-clock">${minuteOf(goal.clock)}&prime;</span>
+          <span>${esc(goal.player)} &middot; ${esc(sideName(goal.team))}</span>
+        </button>`;
+      })
+      .join("");
+  }
+
   function hlOpen(data) {
+    /* A chip is inside the row this call rebuilds. Reading focus before the rebuild is
+       what lets the keyboard stay on the goal it chose instead of being dropped to the
+       top of the dialog after every switch. */
+    const restoreFocus = Boolean(el.hlGoals && el.hlGoals.contains(document.activeElement));
     hl.data = data;
     hl.routes = [];
     hl.ball = null;
@@ -903,6 +943,12 @@ import { createWakeSlider } from "./wake-slider.js";
     el.hlSvg.innerHTML = highlightMarkup(data);
     hl.routes = Array.from(el.hlSvg.querySelectorAll(".hl__route"));
     hl.ball = el.hlSvg.querySelector("#hl-ball");
+    renderHlGoals();
+    if (restoreFocus && !el.hlGoals.hidden) {
+      const chosen = el.hlGoals.querySelector('[aria-pressed="true"]');
+      if (chosen) chosen.focus({ preventScroll: true });
+    }
+
     if (!el.hl.open) el.hl.showModal();
     /* The match clock runs behind a modal, which is a distraction at best. Pressing
        play again is one click and stays the reader's decision. */
@@ -1690,6 +1736,18 @@ import { createWakeSlider } from "./wake-slider.js";
 
   el.hlClose.addEventListener("click", hlDismiss);
   el.hlReplay.addEventListener("click", () => hlPlay());
+
+  /* One listener for the row rather than one per chip: the row is rebuilt every time the
+     panel opens on another goal, and listeners attached to the buttons would be thrown
+     away with them. */
+  el.hlGoals.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-hl-goal]");
+    if (!button || !state.goals) return;
+    const highlight = state.goals.get(button.dataset.hlGoal);
+    if (!highlight) return;
+    if (hl.data && goalKey(hl.data.clock, hl.data.team, hl.data.scorer) === button.dataset.hlGoal) return;
+    hlOpen(highlight);
+  });
 
   document.querySelectorAll("[data-hl-speed]").forEach((btn) => {
     btn.addEventListener("click", () => {

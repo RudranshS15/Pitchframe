@@ -2334,10 +2334,14 @@ class TestTheKeyboard(unittest.TestCase):
 
 
 @requires_server
-class TestTheTeamSheet(unittest.TestCase):
-    """A roster without its substitutes is half a team sheet, and the page has to show
-    both: the payload has to carry the bench, and the panel has to draw it from there
-    rather than from a list of its own.
+class TestTheTeamSheetAndTheGoalChoice(unittest.TestCase):
+    """The two things a reader picks from inside a match.
+
+    A team sheet without its substitutes is half a team sheet, and a match with five
+    goals whose build-up panel only opens the newest one hides four of them behind a
+    menu in the opposite corner. Both are payload-and-page claims: the payload has to
+    carry the bench and the goals, and the page has to draw them from there rather than
+    from a list of its own.
     """
 
     @classmethod
@@ -2382,6 +2386,21 @@ class TestTheTeamSheet(unittest.TestCase):
         self.assertFalse(starters & bench)
         last = self.doc["frames"][-1]["ratings"]["values"]
         self.assertEqual(set(last), starters, "the ratings and the starting elevens disagree")
+
+    def test_the_panel_can_name_every_goal_it_could_show(self) -> None:
+        """The chooser is built from the reached goals, not from the newest highlight: a
+        button whose only job is to reopen the panel that is already open is not a
+        control, so it is hidden below two, and the payload has enough goals for the
+        default match to exercise it."""
+        self.assertGreaterEqual(len(self.doc["goals"]), 2)
+        self.assertIn('id="hl-goals"', self.page)
+        self.assertIn('role="group" aria-label="Goals in this match"', self.page)
+        self.assertIn("function renderHlGoals()", self.app)
+        self.assertIn("entries.length < 2", self.app)
+        self.assertIn("hlGoals.hidden = true", self.app)
+        self.assertIn("data-hl-goal=", self.app)
+        self.assertIn('el.hlGoals.addEventListener("click"', self.app)
+        self.assertIn("reachedBuildUps()", self.app)
 
 if __name__ == "__main__":
     unittest.main()

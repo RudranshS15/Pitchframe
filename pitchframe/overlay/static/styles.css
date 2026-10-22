@@ -1103,6 +1103,49 @@ body[data-view="analyst"] .promo { display: none; }
   margin-top: .2rem;
 }
 
+/* The goal chooser. A chip per goal the replay has reached, in the panel rather than
+   somewhere behind it: the panel is where a reader is, and the only way to watch a
+   particular build-up used to be the dock's menu, which is the other corner of the page.
+   Hidden with fewer than two goals, because there is nothing to choose. */
+.hl__goals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem;
+  margin-top: .6rem;
+}
+
+.hl__goals[hidden] { display: none; }
+
+.hl__goal {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .4rem;
+  padding: .22rem .55rem;
+  border: 1px solid var(--rule-hard);
+  border-radius: 999px;
+  background: none;
+  color: var(--flint);
+  font: inherit;
+  font-size: .68rem;
+  cursor: pointer;
+}
+
+.hl__goal:hover { color: var(--chalk); border-color: var(--chalk); }
+
+.hl__goal:focus-visible { outline: 2px solid var(--chalk); outline-offset: 2px; }
+
+.hl__goal[aria-pressed="true"] {
+  background: var(--chalk);
+  border-color: var(--chalk);
+  color: var(--night);
+}
+
+.hl__goal-clock {
+  font-family: var(--mono);
+  font-size: .62rem;
+  letter-spacing: .04em;
+}
+
 .hl__close {
   flex: none;
   display: grid;

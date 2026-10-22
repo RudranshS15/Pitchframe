@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@200..700&family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 </noscript>
 <link rel="stylesheet" href="/static/styles.css">
-</head>
+<script>
 <body data-view="fan">
 <a class="skip" href="#feed">Skip to commentary</a>
 
@@ -294,6 +294,12 @@
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 3.5 12.5 12.5M12.5 3.5 3.5 12.5"/></svg>
       </button>
     </header>
+
+    <!-- Which goal, when the match has more than one to choose from. Filled by app.js
+         from the goals the replay has already reached, so the row cannot offer a goal
+         the scoreboard has not scored yet; hidden entirely with one goal, because a
+         choice of one is not a choice. -->
+    <div class="hl__goals" id="hl-goals" role="group" aria-label="Goals in this match" hidden></div>
 
     <!-- Provenance, rendered straight from the payload's own labels. The page never
          composes these words itself: a view that could invent a label could drop one. -->

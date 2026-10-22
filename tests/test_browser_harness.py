@@ -372,6 +372,45 @@ class BrowserHarnessTest(unittest.TestCase):
             "the bench repeats a name",
         )
 
+    # -------------------------------------------------------- the goal chooser -- */
+
+    def test_a_reader_can_watch_any_goal_the_match_has_reached(self) -> None:
+        """One chip per goal, one pressed, and a click on another changes the move.
+
+        The panel used to open only the newest build-up. The dock had a menu of goals,
+        which is the other corner of the page and not where a reader is when they are
+        looking at the pitch. The chooser is asserted through a real mouse click and the
+        title the panel then carries, because a chip that only looks pressable is the
+        failure this is here to catch.
+        """
+        highlight = self.feed["highlight"]
+        self.assertTrue(highlight["opened"], "the build-up panel did not open")
+        self.assertGreaterEqual(
+            highlight["goals"], 2, "the default match offers no choice of build-up"
+        )
+        self.assertEqual(highlight["pressed"], 1, "not exactly one goal is marked as open")
+        self.assertEqual(
+            len(set(highlight["labels"])),
+            highlight["goals"],
+            "two chips describe the same goal",
+        )
+        self.assertTrue(highlight["switched"], "the first chip could not be clicked")
+        self.assertNotEqual(
+            highlight["afterTitle"],
+            highlight["beforeTitle"],
+            "choosing a goal did not change the panel",
+        )
+        self.assertEqual(
+            highlight["afterPressed"],
+            highlight["firstChip"],
+            "the goal that was chosen is not the one marked as open",
+        )
+        self.assertTrue(
+            highlight["focusKept"],
+            "the keyboard was dropped to the page when the panel switched goals",
+        )
+        self.assertTrue(highlight["dismissed"], "the panel did not close")
+
     # ----------------------------------------------------------- the one light -- */
 
     def test_the_light_reaches_every_panel_by_distance(self) -> None:
