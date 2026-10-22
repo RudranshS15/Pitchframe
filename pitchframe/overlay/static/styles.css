@@ -77,6 +77,25 @@ body {
    for every element, rather than only the ones no author rule touches. */
 [hidden] { display: none !important; }
 
+/* The two pages are one site, and choosing one used to be a hard cut: the old document
+   vanished and the new one appeared once it had loaded. A cross-document view transition
+   keeps the page that was there on screen while the next one arrives, then crosses the
+   two over in 150ms — the load still takes what it takes, but it reads as a change of
+   page rather than as a blank frame. Browsers without the API ignore both rules and get
+   the hard cut they had, which is why this is CSS and not a script. Reduced motion asks
+   for no crossfade at all rather than a shorter one. */
+@view-transition { navigation: auto; }
+
+@keyframes pf-page-out { to { opacity: 0; } }
+@keyframes pf-page-in { from { opacity: 0; } }
+
+::view-transition-old(root) { animation: pf-page-out 150ms ease both; }
+::view-transition-new(root) { animation: pf-page-in 150ms ease both; }
+
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
+}
+
 h1, h2, h3, p, dl, dd, dt, blockquote, figure { margin: 0; }
 ol, ul { margin: 0; padding: 0; list-style: none; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }

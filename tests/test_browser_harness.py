@@ -411,6 +411,18 @@ class BrowserHarnessTest(unittest.TestCase):
         )
         self.assertTrue(highlight["dismissed"], "the panel did not close")
 
+    def test_the_nav_fetches_the_other_page_before_the_click(self) -> None:
+        """A real hover on the catalogue link adds a prefetch for it to the head.
+
+        Reading the file would only say the code exists; this is the browser saying a
+        pointer arriving on the link started the next document, which is the half of the
+        navigation cost that used to land after the click.
+        """
+        self.assertTrue(
+            self.feed["prefetch"],
+            "hovering the catalogue link prefetched nothing, so the click pays for the page",
+        )
+
     # ----------------------------------------------------------- the one light -- */
 
     def test_the_light_reaches_every_panel_by_distance(self) -> None:

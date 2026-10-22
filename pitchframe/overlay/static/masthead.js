@@ -25,7 +25,9 @@ if (nav) {
        links rather than across a gallery's row. */
     spread: 42,
     particleCount: 12,
-    animationTime: 520
+    /* Short enough to read as a reaction rather than a wait: the address is followed
+       after a sixth of this (gooey-nav.js), about 76ms. */
+    animationTime: 420
   });
 }
 

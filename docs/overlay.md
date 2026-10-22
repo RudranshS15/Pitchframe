@@ -271,6 +271,28 @@ Three decisions in the page are worth naming:
 `fault` is carried through from the browser's own query string, so a mode browser opened
 on the honest baseline opens honest matches and one opened with the fault planted keeps it.
 
+### Choosing a page
+
+The way between the catalogue and the feed used to spend its time in three places, and
+only one of them was the page being loaded. The nav held the click for a third of its
+520ms burst — about 177ms — before following the address; the next document then had to be
+fetched from cold; and the catalogue drew its sphere only after `document.fonts.ready`,
+which waits for every face a CDN has been asked for. A slow font request therefore left
+the front door as a headline above an empty stage, which reads as a broken page rather
+than as a page with a different typeface.
+
+Each of those is now bounded. The burst is 420ms and the address is followed after 18% of
+it — about 76ms, one painted frame of the pill breaking — because the click has landed and
+watching droplets land is not worth a fifth of a second. The destination is prefetched by
+a `<link rel="prefetch">` added while the pointer is on the link or the keyboard is on it,
+so the click is not the first request for the page. The catalogue waits at most 250ms for
+faces and then draws in the fallback face rather than waiting on a network it does not
+control; the words on the cards are DOM text and pick up the real face when it arrives.
+And where the browser supports it, a 150ms cross-document view transition keeps the old
+document on screen while the new one loads and crosses the two over, so the load reads as
+a change of page rather than as a blank frame. Reduced motion turns the crossfade off and
+navigates at once, which is what the nav already did for a keyboard activation.
+
 ## How it is put together
 
 ```text

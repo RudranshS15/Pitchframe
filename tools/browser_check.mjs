@@ -637,6 +637,23 @@ out.feed.highlight = await (async () => {
   };
 })();
 
+/* The nav fetches the other page while the pointer is on its link, so the click does not
+   pay for the document. Read off the head after a real hover: a hint that is added to the
+   page is the only evidence that the prefetch is wired to the pointer at all. */
+out.feed.prefetch = await (async () => {
+  const spot = await evaluate(`(() => {
+    const link = [...document.querySelectorAll('[data-gooey-index] a')].find((a) => a.getAttribute('href') === '/');
+    if (!link) return null;
+    const r = link.getBoundingClientRect();
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+  })()`);
+  if (spot) {
+    await move(spot.x, spot.y);
+    await sleep(300);
+  }
+  return evaluate(`[...document.querySelectorAll('link[rel="prefetch"]')].map((link) => new URL(link.href).pathname)`);
+})();
+
 /* ------------------------------------------------------------- the layout --- */
 
 /* The one probe that writes to the markup (the column above moved the scroll position and

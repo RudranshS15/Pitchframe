@@ -2401,6 +2401,21 @@ class TestTheTeamSheetAndTheGoalChoice(unittest.TestCase):
         self.assertIn("data-hl-goal=", self.app)
         self.assertIn('el.hlGoals.addEventListener("click"', self.app)
         self.assertIn("reachedBuildUps()", self.app)
+    def test_the_nav_leaves_almost_at_once_and_prefetches_the_other_page(self) -> None:
+        """The wait used to be a third of a 520ms burst — about 180ms — and then the next
+        document still had to be fetched. The hold is now one painted frame, the other
+        page is fetched while the pointer is on its link, and the swap crossfades where
+        the browser supports it. Each is asserted where it is written down, because none
+        of them is visible in a file-based test otherwise."""
+        nav = self.client.get("/static/gooey-nav.js").text
+        masthead = self.client.get("/static/masthead.js").text
+        css = self.client.get("/static/styles.css").text
+        self.assertIn("const REVEAL_SHARE = 0.18;", nav)
+        self.assertIn('hint.rel = "prefetch"', nav)
+        self.assertIn('list.addEventListener("focusin"', nav)
+        self.assertIn("animationTime: 420", masthead)
+        self.assertIn("@view-transition { navigation: auto; }", css)
+
 
 if __name__ == "__main__":
     unittest.main()

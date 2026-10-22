@@ -5,8 +5,8 @@ stream into explainable, personalised narratives.
 
 > **Status: working end to end.** The generator, the analytics engine, the claim
 > layer, the Narrator/Verifier loop, the live overlay, the goal build-up panel and
-> the player ratings with the man of the match are implemented and tested (530
-> tests; the twelve that drive a real browser are behind a gate — see
+> the player ratings with the man of the match are implemented and tested (532
+> tests; the thirteen that drive a real browser are behind a gate — see
 > [Development](#development)). See [Roadmap](#roadmap) for what is still open.
 
 ---
@@ -175,7 +175,11 @@ the way between the two documents works with no script at all. All were ported f
 the sea, their licences travel beside them, and the dock duplicates the transport on
 purpose: one state, three views of it. The keyboard is a fourth way in — `Space` plays and pauses, the arrows
 seek by one analysed window, `1`/`2`/`3` are the three speeds, `F`/`A` the two views and `G`
-the newest build-up — and the dock's last menu is that list.
+the newest build-up — and the dock's last menu is that list. The way between the two pages
+is prefetched while the pointer is on its link, followed after one painted frame of the
+nav's burst rather than a third of a second into it, and crossed over with a short
+cross-document view transition where the browser has one — so choosing a page lands on the
+next document rather than on a gap where it has not arrived yet.
 
 Every panel lights the boundary nearest the pointer, in a cone aimed at it. That is
 **BorderGlow**, the second of the ports that is not a control — the match bar, the

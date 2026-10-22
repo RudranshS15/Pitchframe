@@ -309,9 +309,20 @@ async function boot() {
 
   /* The tiles are drawn from text, so they are drawn once: a face that arrives after the
      atlas was filled would leave every card in the fallback face for the life of the page.
-     A browser with no font loading API at all has no such problem to wait on. */
+     A browser with no font loading API at all has no such problem to wait on.
+
+     The wait is bounded, though. The faces come from a CDN, and `fonts.ready` waits for
+     every face the document asked for — a slow or blocked font request could leave the
+     catalogue as a headline and an empty stage for seconds, which is the page looking
+     broken rather than a page with a slightly different typeface. A quarter of a second
+     is enough for a face that is going to arrive; after that the sphere is drawn in the
+     fallback face and the page is already usable. The words on the cards are DOM text and
+     pick up the real face whenever it lands. */
   if (document.fonts && document.fonts.ready) {
-    await document.fonts.ready.catch(() => {});
+    await Promise.race([
+      document.fonts.ready.catch(() => {}),
+      new Promise((resolve) => window.setTimeout(resolve, 250))
+    ]);
   }
 
   const items = entries.map(asItem);

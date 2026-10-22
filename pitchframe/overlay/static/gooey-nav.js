@@ -54,12 +54,13 @@ const MAX_PILLS = 4;
 const MARGIN = 72;
 
 /*: How far into the burst the address is followed, as a share of `animationTime`. At the
-    default 520ms this is about 180ms: long enough that a reader sees the pill break and
-    the first droplets cross between the items, short enough that the click still reads as
-    immediate. It is a share rather than a millisecond constant so that a caller who slows
-    the animation for a larger nav gets a proportionally longer look at the burst from the
-    one knob it already has. */
-const REVEAL_SHARE = 0.34;
+    default 420ms this is about 76ms: one painted frame of the break, which is all a reader
+    needs to see that the click landed. It used to be a third of a 520ms animation — about
+    180ms — and that wait, stacked on the next document's own load, is what made choosing a
+    page feel like the click had missed. It is a share rather than a millisecond constant so
+    that a caller who slows the animation for a larger nav gets a proportionally longer look
+    at the burst from the one knob it already has. */
+const REVEAL_SHARE = 0.18;
 
 const VERTEX = `#version 300 es
 in vec2 aPosition;
@@ -739,9 +740,36 @@ export function createGooeyNav(host, options = {}) {
 
   /* ------------------------------------------------------------------ the input --- */
 
+  /* The destination document, fetched while the pointer is still travelling to the link.
+     Both pages are small, but a navigation cannot start before the document has arrived,
+     and this is the one time the browser is otherwise idle. It is a hint, not a hold: a
+     reader who clicks instantly gets the same navigation, just without the head start. */
+  const prefetched = new Set();
+
+  const prefetch = (item) => {
+    const link = item.querySelector("a");
+    const href = link?.getAttribute("href");
+    if (!href || href.startsWith("#") || link.target === "_blank" || link.hasAttribute("download")) return;
+    let url;
+    try {
+      url = new URL(href, location.href);
+    } catch {
+      return;
+    }
+    if (url.origin !== location.origin || url.href === location.href) return;
+    if (prefetched.has(url.href)) return;
+    prefetched.add(url.href);
+    const hint = document.createElement("link");
+    hint.rel = "prefetch";
+    hint.as = "document";
+    hint.href = url.href;
+    document.head.append(hint);
+  };
+
   const onOver = (event) => {
     const item = event.target.closest("[data-gooey-index]");
     if (!item || !list.contains(item)) return;
+    prefetch(item);
     const index = Number(item.dataset.gooeyIndex);
     const rect = rects[index];
     if (!rect) return;
@@ -808,6 +836,12 @@ export function createGooeyNav(host, options = {}) {
   list.addEventListener("pointerover", onOver);
   list.addEventListener("pointerleave", onLeave);
   list.addEventListener("click", onClick);
+  /* Keyboard focus is the hover a reader without a pointer has: the same head start, on
+     the same destination, before Enter is pressed. */
+  list.addEventListener("focusin", (event) => {
+    const item = event.target.closest("[data-gooey-index]");
+    if (item && list.contains(item)) prefetch(item);
+  });
 
   const motionWatch = watchReducedMotion((matches) => {
     reduce = matches;
