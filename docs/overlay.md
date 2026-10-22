@@ -441,6 +441,15 @@ minutes there was nothing on the page that said the panel existed at all. The la
 says what it is waiting for, dims itself while there is nothing to open, and lights up
 the moment a goal lands — and `G` reaches it from the keyboard.
 
+A fourth way in is inside the panel itself. When the match has scored more than once, the
+panel carries a chip per goal the replay has reached — the minute, the scorer and the side
+— with the move on screen pressed. Choosing one opens that move without leaving the
+panel, and focus is put back on the chip that was chosen rather than dropped to the top of
+the dialog, so a keyboard reader can walk the row. With a single goal the row is hidden:
+a control whose only action is to reopen the panel that is already open is not a control.
+The row is built from the same reached-goal list as the launcher and the dock's menu, so it
+cannot offer a goal the scoreboard has not scored yet.
+
 ### The team sheet
 
 The squads panel is a team sheet: the eleven who started, then the five substitutes behind

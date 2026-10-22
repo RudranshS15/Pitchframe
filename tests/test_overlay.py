@@ -2401,6 +2401,7 @@ class TestTheTeamSheetAndTheGoalChoice(unittest.TestCase):
         self.assertIn("data-hl-goal=", self.app)
         self.assertIn('el.hlGoals.addEventListener("click"', self.app)
         self.assertIn("reachedBuildUps()", self.app)
+
     def test_the_nav_leaves_almost_at_once_and_prefetches_the_other_page(self) -> None:
         """The wait used to be a third of a 520ms burst — about 180ms — and then the next
         document still had to be fetched. The hold is now one painted frame, the other
