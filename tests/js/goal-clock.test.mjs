@@ -20,6 +20,7 @@ import assert from "node:assert/strict";
 
 import {
   buildItems,
+  frameAt,
   goalKey,
   newestBuildUp,
   reachedGoals,
@@ -190,6 +191,66 @@ test("the goal row sorts ahead of the same-second claims, and only once", () => 
     items.indexOf(goal) < items.indexOf(claim),
     "the goal did not sort before the window's claim rows"
   );
+});
+
+/*
+ * The analysed window the analyst column reads.
+ *
+ * The board's change detection is built on one promise the old inline scan made
+ * silently: for every clock inside one window, `frameAt` returns the *same object*
+ * (the board diffs the reference to decide whether the payload moved), null before
+ * the first window (the replay's first minutes have no closed window to show), and
+ * one exact crossing point where the frame changes. The boundaries are the frames'
+ * own end clocks, inclusive — the same rule the goal cursor holds, so "which window
+ * is this playhead in" and "which goals has it reached" agree about what second
+ * something has happened.
+ */
+const FRAMES = WINDOWS.map((end, index) => ({
+  clock: end,
+  window: [index === 0 ? 0 : WINDOWS[index - 1], end],
+  incidents: [],
+  feed: [],
+}));
+
+test("the window cursor returns null before the first analysed window", () => {
+  // 0 is the page's own starting clock, and the first ten minutes of the replay
+  // stand before the first five-minute window closes.
+  assert.equal(frameAt(FRAMES, 0), null);
+  assert.equal(frameAt(FRAMES, 899), null);
+  // Empty and absent frame lists — a payload with no analysis yet.
+  assert.equal(frameAt([], 5400), null);
+  assert.equal(frameAt(undefined, 5400), null);
+});
+
+test("the window boundary is inclusive, and crossing it lands on the new frame exactly once", () => {
+  // 900 is the first window's own end clock: standing on it, the window has closed.
+  assert.equal(frameAt(FRAMES, 900), FRAMES[0]);
+  assert.equal(frameAt(FRAMES, 899), null);
+  // Every window's end own second is the last second of that window...
+  for (const frame of FRAMES) {
+    assert.equal(frameAt(FRAMES, frame.clock), frame, `clock ${frame.clock} fell short of its own window`);
+  }
+  // ...and past it the frame does not change until the *next* window's end clock
+  // arrives — the first window stays on screen for its whole five minutes.
+  assert.equal(frameAt(FRAMES, 901), FRAMES[0]);
+  assert.equal(frameAt(FRAMES, 1499), FRAMES[0]);
+  assert.equal(frameAt(FRAMES, 1500), FRAMES[1], "the second window was late to its own end clock");
+  assert.equal(frameAt(FRAMES, 4801), FRAMES[4]);
+});
+
+test("every clock after a window's end returns the same object — the board's change detection", () => {
+  // The identity the board diffs on: a frame stays current from its window's end
+  // clock up to the next frame's — the replay shows the last closed window the
+  // playhead has passed, so a range of clocks, one reference. A scan that rebuilt
+  // rows or copied frames here would repaint the whole analyst column every
+  // second instead of once every five minutes.
+  for (let index = 0; index < FRAMES.length; index += 1) {
+    const frame = FRAMES[index];
+    const upper = index + 1 < FRAMES.length ? FRAMES[index + 1].clock - 1 : 7200;
+    for (let clock = frame.clock; clock <= upper; clock += 17) {
+      assert.strictEqual(frameAt(FRAMES, clock), frame, `clock ${clock} left the reach of its frame`);
+    }
+  }
 });
 
 test("rolling back reveals nothing the smaller clock does not own", () => {

@@ -1,14 +1,15 @@
 /**
- * The replay's goal sync, as pure decisions.
+ * The replay's clock sync, as pure decisions.
  *
- * Every goal-driven surface on the match page — the feed row, the scoreboard, the
- * dock's build-up badge and menu, the launcher — answers the same question from the
- * same inputs: which goals has the playhead reached? Before this module, that
- * question was answered by four separate filters and one builder scattered through
- * app.js; they agreed because each was written beside the others. Extracting them
- * here gives the agreement a place to be tested: one clock step must move the row,
- * the score, the launcher and the dock together or the page spoils or lags its own
- * replay (see tests/js/goal-clock.test.mjs).
+ * Every clock-driven surface on the match page — the feed row, the scoreboard, the
+ * dock's build-up badge and menu, the launcher, the analysed window the analyst
+ * column reads — answers one of two questions from the same inputs: which goals has
+ * the playhead reached, and which window's analysis does it stand in? Before this
+ * module, those questions were answered by separate filters and a builder scattered
+ * through app.js; they agreed because each was written beside the others. Extracting
+ * them here gives the agreement a place to be tested: one clock step must move the
+ * row, the score, the launcher and the dock together, and a window boundary must
+ * move the board as one frame (see tests/js/goal-clock.test.mjs).
  *
  * No DOM, no timers, no state: everything takes the payload's own lists and a match
  * clock and hands back what the page should show, so `tests/js` runs the exact code
@@ -24,6 +25,27 @@ export const goalKey = (clock, team, player) => `${clock}|${team}|${player}`;
 /** The goals the playhead has reached, in match order. */
 export function reachedGoals(goals, clock) {
   return (goals || []).filter((goal) => goal.clock <= clock);
+}
+
+/**
+ * The analysed window the playhead stands in.
+ *
+ * Frames are keyed by their window's *end* clock, so a clock inside a window belongs
+ * to the last frame whose clock it has passed — the same inclusive boundary the goal
+ * rule above uses, on the same reasoning: a window whose last second the playhead is
+ * standing on is a window that has closed. Two callers depend on more than the frame:
+ * the board diffs the returned object to decide whether the payload has moved, so the
+ * same clock range must return the *same object* until a new window is reached, and
+ * a clock before the first analysed window (the replay's first minutes have no closed
+ * window to show) gets null rather than a guess.
+ */
+export function frameAt(frames, clock) {
+  let found = null;
+  for (const frame of frames || []) {
+    if (frame.clock <= clock) found = frame;
+    else break;
+  }
+  return found;
 }
 
 /** The score as it stood at `clock`, counting a goal on that exact second — the

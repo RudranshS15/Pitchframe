@@ -36,7 +36,13 @@
  * showing one name and the document title another.
  */
 
-import { goalKey, buildItems, reachedGoals, newestBuildUp } from "./goal-clock.mjs";
+import {
+  goalKey,
+  buildItems,
+  reachedGoals,
+  newestBuildUp,
+  frameAt,
+} from "./goal-clock.mjs";
 import { createBorderGlow } from "./border-glow.js";
 import { createDock } from "./dock.js";
 import { createRubberSegment } from "./rubber-segment.js";
@@ -333,16 +339,6 @@ import { createWakeSlider } from "./wake-slider.js";
       : "";
   }
 
-  function latestFrame(clock) {
-    const frames = state.doc.frames;
-    let found = null;
-    for (const frame of frames) {
-      if (frame.clock <= clock) found = frame;
-      else break;
-    }
-    return found;
-  }
-
   /* The board is redrawn on every frame of the replay, and almost every one of those
      frames has nothing to say: the clock ticks sixty times a second while the payload
      moves in five-minute windows, so the minute label changes once a second and the
@@ -353,7 +349,7 @@ import { createWakeSlider } from "./wake-slider.js";
      forced layout — so each part of the board is written only when the thing it shows
      has changed. The minute and the scoreline are compared as the strings they are
      written as, and everything that is a function of the analysed frame is keyed on the
-     frame itself: `latestFrame` hands back the same object until a new window is
+     frame itself: `frameAt` hands back the same object until a new window is
      reached, so that comparison is the question "has the payload moved".
 
      The rule is the one the dock's goal count and the launcher already follow — a panel
@@ -390,7 +386,7 @@ import { createWakeSlider } from "./wake-slider.js";
       el.score.setAttribute("aria-label", `Score ${home} to ${away}`);
     }
 
-    const frame = latestFrame(clock);
+    const frame = frameAt(doc.frames, clock);
     if (frame !== shownFrame) {
       shownFrame = frame;
 
