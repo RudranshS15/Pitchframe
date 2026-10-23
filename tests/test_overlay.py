@@ -1186,11 +1186,12 @@ class TestThePortedControls(unittest.TestCase):
                         self.client.get("/static/" + target.lstrip("./")).status_code, 200
                     )
         # app.js imports its five controls, the glow it dresses the panels with, the
-        # goal-clock it syncs every goal-driven surface from and the frame-link pair the
-        # shareable URL is built and read through; each of the eight ports imports the
-        # shared runtime; the mode browser imports the sphere it is built on plus the glow
-        # its stage wears; and the masthead imports the wordmark and the nav it mounts.
-        self.assertEqual(seen, 20)
+        # goal-clock it syncs every goal-driven surface from, the frame-link pair the
+        # shareable URL is built and read through and the relative-movement ranking it
+        # sorts the analyst column by; each of the eight ports imports the shared
+        # runtime; the mode browser imports the sphere it is built on plus the glow its
+        # stage wears; and the masthead imports the wordmark and the nav it mounts.
+        self.assertEqual(seen, 21)
 
     def test_the_pressure_type_is_asked_for_an_axis_the_face_has(self) -> None:
         """The effect is `font-variation-settings` written on a face that answers them.

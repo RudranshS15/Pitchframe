@@ -44,6 +44,7 @@ import {
   frameAt,
 } from "./goal-clock.mjs";
 import { buildFrameQuery, parseFrameQuery } from "./frame-link.mjs";
+import { rankByRelativeMovement } from "./relative-rank.mjs";
 import { createBorderGlow } from "./border-glow.js";
 import { createDock } from "./dock.js";
 import { createRubberSegment } from "./rubber-segment.js";
@@ -472,12 +473,10 @@ import { createWakeSlider } from "./wake-slider.js";
 
     /* Ranked the same way the narrator ranks: by relative movement, because the
        metrics do not share a scale and raw deltas would pick whichever happens to
-       have the largest units. */
-    const rows = frame.readings
-      .slice()
-      .sort((a, b) =>
-        Math.abs(b.delta) / (Math.abs(b.baseline_value) + 1e-6) -
-        Math.abs(a.delta) / (Math.abs(a.baseline_value) + 1e-6));
+       have the largest units. The rule lives in relative-rank.mjs — the same
+       formula, down to its epsilon, as demo.py's rank_by_relative_movement, and
+       the cross-language test holds both to one order on identical fixtures. */
+    const rows = rankByRelativeMovement(frame.readings);
 
     el.metricsBody.innerHTML = rows
       .map((r) => {

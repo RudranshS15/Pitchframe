@@ -29,10 +29,43 @@ from dataclasses import dataclass, field
 from ..claims import Claim, Verdict
 from .pipeline import Assessment, Snapshot
 
-__all__ = ["InjectingNarrator", "RuleVerifier", "FAULT_MODES"]
+__all__ = ["InjectingNarrator", "RuleVerifier", "FAULT_MODES", "rank_by_relative_movement"]
 
 #: Faults that can be injected. ``none`` measures the honest baseline.
 FAULT_MODES = ("none", "narrator-invert")
+
+#: The epsilon every baseline is padded with before the relative-movement division.
+#: Without it a reading whose baseline is exactly zero — a metric the baseline window
+#: never recorded — would divide by zero and drop out of a ranking it might top.
+#: The board's analyst column pads with the same constant: the ranking is one rule
+#: shared across two languages, and the shared test pins the two sides to the same
+#: order on identical fixtures (tests/js/rank-agreement.test.mjs).
+RELATIVE_MOVEMENT_EPSILON = 1e-6
+
+
+def rank_by_relative_movement(readings, *, keep_flat: bool = False) -> list:
+    """Readings ranked by relative movement, strongest first.
+
+    Relative rather than absolute, because the metrics do not share a scale: a
+    momentum delta of 10 and a possession delta of 0.3 say very different things
+    about which is the bigger story, and comparing the raw numbers would pick
+    whichever metric happens to have the largest units.
+
+    Args:
+        readings: the snapshot's readings, any iterable.
+        keep_flat: keep readings that did not move. The narrator drops them — a
+            claim about a reading that did not move is a claim with nothing in it —
+            while the board renders every row and only sorts. Both orders are
+            stable: equal weights keep the snapshot's order, in either language.
+    """
+    ranked = list(readings)
+    if not keep_flat:
+        ranked = [r for r in ranked if not r.is_flat]
+    ranked.sort(
+        key=lambda r: abs(r.delta) / (abs(r.baseline_value) + RELATIVE_MOVEMENT_EPSILON),
+        reverse=True,
+    )
+    return ranked
 
 
 @dataclass
@@ -74,8 +107,7 @@ class InjectingNarrator:
                 was never planted. Pinning it makes the request and the outcome the
                 same thing.
         """
-        moved = [r for r in snap.readings if not r.is_flat]
-        moved.sort(key=lambda r: abs(r.delta) / (abs(r.baseline_value) + 1e-6), reverse=True)
+        moved = rank_by_relative_movement(snap.readings)
         picks = moved[: self.max_claims]
         if pin is not None and moved:
             pinned = next((r for r in moved if r.key == pin), None)
