@@ -546,21 +546,34 @@ out.feed.column.wheel = await (async () => {
     return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) };
   })()`);
   await sleep(300);
-  const turn = async () => {
-    await send("Input.dispatchMouseEvent", {
+  const turn = () =>
+    send("Input.dispatchMouseEvent", {
       type: "mouseWheel", x: spot.x, y: spot.y, deltaX: 0, deltaY: 320
     });
-    await sleep(350);
+
+  /* A turn lands on the browser's own schedule, not ours, and this probe used to read
+     the page one fixed sleep after dispatching — which raced the scroll and failed on
+     code that had just passed. Now the gesture repeats until the page answers it and
+     the answer is polled, not timed: what is asserted is that the wheel moves the
+     column, never when it does. */
+  const answered = async (expression, threshold, attempts = 5) => {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      await turn();
+      if (await waitFor(`(${expression}) > ${threshold}`, 2000)) return true;
+    }
+    return false;
   };
-  await turn();
+
+  await answered("document.querySelector('.side__pin').scrollTop", 0);
   const columnMoved = await evaluate("document.querySelector('.side__pin').scrollTop");
   await evaluate(`(() => {
     const pin = document.querySelector('.side__pin');
     pin.scrollTop = pin.scrollHeight - pin.clientHeight;
     return true;
   })()`);
+  await sleep(300);
   const pageBefore = await evaluate("window.scrollY");
-  await turn();
+  await answered(`window.scrollY - ${pageBefore}`, 1);
   const pageAfter = await evaluate("window.scrollY");
   await evaluate(`(() => {
     document.querySelector('.side__pin').scrollTop = 0;
