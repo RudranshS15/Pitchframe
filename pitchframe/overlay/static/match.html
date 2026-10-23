@@ -128,6 +128,19 @@
         <span class="launch__note" id="launch-note">Loading the replay…</span>
       </p>
     </div>
+
+    <!-- The live pitch. A row beside the launcher: the link opens the standalone pitch view
+         (/static/pitch/) for the seed the payload names, and the small switch beside it is
+         the on/off control the whole feature answers to — off hides the link and the page
+         remembers that in localStorage, on brings it back. The switch itself never hides,
+         so turning the pitch back on needs nothing but the page it sits on. -->
+    <div class="pitchchip" id="pitch-chip">
+      <a class="pitchchip__open" id="pitch-open" href="/static/pitch/pitch.html" rel="noopener">Live pitch</a>
+      <div class="pitchchip__toggle">
+        <button type="button" class="pitchchip__switch" id="pitch-switch" aria-pressed="true"
+                aria-label="Show the live pitch button on the match bar">on</button>
+      </div>
+    </div>
   </section>
 
   <!-- ----------------------------------------------------------------- ratings -->

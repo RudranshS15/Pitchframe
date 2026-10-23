@@ -11,7 +11,10 @@
 #           can see the page: the sea, the sphere and the panel glow are canvas and
 #           computed style, and every way they can break is invisible to a test that reads
 #           files. It is separate from `full` because `full` has to stay fast and
-#           dependency-light, while this one launches Chrome and takes half a minute.
+#           dependency-light, while this one launches Chrome and takes half a minute. It
+#           is also where the live pitch view's unit tests run — pure modules over
+#           Node's own runner (docs/pitch-view.md), no packages, so they ride the job
+#           that already brings Node rather than earning a fourth one.
 #
 # Python is pinned to 3.13 for the same reason requirements.txt pins it: 3.14 does not
 # yet have wheels for the whole agent dependency chain. The core itself runs on both.
@@ -90,6 +93,12 @@ jobs:
 
       - name: Install
         run: python -m pip install -r requirements.txt
+
+      # The live pitch view's unit tests. They need no packages and no browser — Node's
+      # own runner over the pure modules under static/pitch/ — and they live beside the
+      # view the way the Python suite lives beside the package it tests.
+      - name: The live pitch view's unit tests
+        run: node --test "tests/js/*.test.mjs"
 
       # A runner has no GPU, so software rendering has to be asked for by name: Chrome 126
       # onward refuses to fall back to SwiftShader unless it is told to, and without it the

@@ -1075,6 +1075,68 @@ body[data-view="analyst"] .promo { display: none; }
   text-wrap: pretty;
 }
 
+/* The live pitch. The page's frame around the chip on the match bar: the link opens the
+   standalone pitch view at this match's own seed (static/pitch/, docs/pitch-view.md), and
+   the small switch beside it is the on/off control — off hides the link and remembers the
+   choice in localStorage, on brings it back, and the row collapses to the switch rather
+   than vanishing, so what turned it off can turn it on. The link gets the launcher's
+   treatment under the pointer for the same reason the launcher does: it opens a picture of
+   this match, not a verdict about it — but violet keeps its distance from --verify on
+   purpose, since it is a magnifier that borrows nothing from published. */
+.pitchchip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: .9rem;
+  border-top: 1px solid var(--rule);
+  padding-top: .85rem;
+}
+
+.pitchchip__open {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: .95rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--chalk);
+  text-decoration: none;
+}
+
+.pitchchip__open:hover,
+.pitchchip__open:focus-visible {
+  color: var(--glow-two);
+}
+
+.pitchchip__toggle { display: flex; margin-inline-start: auto; }
+
+.pitchchip__switch {
+  font-family: var(--mono);
+  font-size: .64rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--flint);
+  background: none;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: .22rem .62rem;
+  cursor: pointer;
+}
+
+.pitchchip__switch:hover,
+.pitchchip__switch:focus-visible {
+  border-color: var(--rule-hard);
+  color: var(--chalk);
+}
+
+.pitchchip__switch[aria-pressed="true"] {
+  color: var(--chalk);
+  border-color: var(--flint);
+}
+
+.pitchchip--off .pitchchip__open { display: none; }
+
+.pitchchip--off .pitchchip__toggle { margin-inline-start: 0; }
+
 /* -------------------------------------------------------------------- foot -- */
 
 .foot {

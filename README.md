@@ -287,6 +287,44 @@ with the panel and recomputable from the tallies beside each name, and the concl
 is a renderer over counted facts — it may say a player scored twice and may not say that
 this is why the match was won.
 
+### The live pitch view
+
+The overlay now carries a standalone **live pitch view** at
+`/static/pitch/pitch.html`, opened from the match bar as well as by address: the
+bar carries a **live pitch** chip that opens the view at the seed the payload was
+actually built from, with an **on/off** switch beside it that hides the chip and
+remembers the choice in localStorage (the switch itself never hides, so switching
+back on is always one click away). The page draws the pitch in a canvas to
+the field's real size (105 × 68 m) in a midnight-black / electric-violet /
+sun-yellow scheme — violet versus yellow markers, a yellow ball trail, a yellow
+delayed banner — chosen for contrast over the dark field rather than for atmosphere,
+with the colour-blind-safe and classic palettes one chip away. Twenty-two markers
+with shirt numbers, the ball, a fading trail, goalkeepers distinguished
+by ring, and a player card on tap/hover. It runs on the mock tracker's recording as
+its producer of positions, driven by two source classes: a `ReplaySource` that
+returns the full match at once with play/pause ×1/×2/×4 and a scrubber, and a
+`LiveSource` that streams the same recording at 1 Hz and can be propped with an
+armed drop — *`injectDrop(seconds)` severs the stream, the markers drift and fade,
+a banner reads *live data delayed*, and the reconnect is a full snapshot that is
+glided in rather than snapped.* Neither path touches a real network; the page runs
+with no server beyond the overlay and with no new dependency.
+
+The mock tracker's player positions are synthesized: 22 players hold formation slots,
+are pulled toward the ball by role-dependent weights and wobble with seeded noise;
+the ball is possessed, walks toward a target in the possessor's attacking half and
+changes hands over time. Positions are deterministic per seed — open the page with
+`?seed=99` for a different match, `?quick=1` for a 12-minute recording — so a
+test-disabled test suite and a demo can pin any of it. Half-time is instantaneous
+(the break is not modelled) and `speed` is an EMA, so instantaneous bursts are
+damped — fine for a chip, wrong for coaching analysis.
+
+The interpolation and its edge cases are test-first: pure modules (mapping,
+interpolation, hold/fade, substitutions, determinism) are unit-tested with Node's
+built-in runner — `node --test "tests/js/*.test.mjs"` — pinned to Node 24 and run as a
+step of the `browser` job in `.github/workflows/tests.yml`, and the whole detail, data
+contract and every consciously-named boundary case are in
+[docs/pitch-view.md](docs/pitch-view.md).
+
 Requires Python 3.10+. Developed against **3.13**.
 
 ## Why synthetic data

@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pitchframe · live pitch</title>
+    <link rel="stylesheet" href="pitch.css" />
+    <style>
+      /* Page scaffolding only; the widget's own styles live in pitch.css. */
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #050510;
+      }
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 18px 16px 40px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="mount"></div>
+      <div class="pf-transport" hidden id="transport">
+        <button type="button" class="pf-btn" id="playPause" aria-pressed="true">⏸ pause</button>
+        <input id="scrub" class="pf-scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="timeline" />
+        <span class="pf-clock" id="clock">0:00</span>
+        <span role="group" aria-label="playback speed" style="display:flex;gap:4px">
+          <button type="button" class="pf-btn" data-rate="1">1×</button>
+          <button type="button" class="pf-btn" data-rate="2">2×</button>
+          <button type="button" class="pf-btn" data-rate="4">4×</button>
+        </span>
+        <button type="button" class="pf-btn" id="modeBtn" title="Switch between the recorded replay and the streaming mock feed">go live</button>
+      </div>
+      <p class="pf-note" id="note">
+        Replay of the mock tracker's recording. “Go live” switches to the
+        streaming feed, which drops for a few seconds so the delayed-and-recover
+        path is visible without a real network.
+      </p>
+    </main>
+
+    <script type="module">
+      import { createPitchView } from "./pitch-view.mjs";
+      import { generateRecording } from "./pitch-mock.mjs";
+      import { createReplaySource, createLiveSource } from "./pitch-sources.mjs";
+      import { formatClock } from "./pitch-core.mjs";
+
+      const params = new URLSearchParams(location.search);
+      const seed = Number.parseInt(params.get("seed") ?? "7", 10) || 7;
+
+      const recording = generateRecording({ seed, minutes: params.has("quick") ? 12 : 90 });
+      const mount = document.getElementById("mount");
+      const transport = document.getElementById("transport");
+      const note = document.getElementById("note");
+      const playPause = document.getElementById("playPause");
+      const scrub = document.getElementById("scrub");
+      const clock = document.getElementById("clock");
+      const modeBtn = document.getElementById("modeBtn");
+
+      let view = null;
+      let live = null;
+
+      function mountReplay() {
+        if (live) {
+          live.dispose();
+          live = null;
+        }
+        // Leave nothing behind: the outgoing view owns DOM (wrap, chips, banner,
+        // card) and a running requestAnimationFrame loop, so overwriting `view`
+        // without destroying it doubles the pitch and the loop.
+        if (view) {
+          view.destroy();
+          view = null;
+        }
+        const source = createReplaySource(recording);
+        view = createPitchView(mount, source, { label: "number" });
+        scrub.max = String(recording.durationMs);
+        transport.hidden = false;
+        modeBtn.textContent = "go live";
+        note.textContent = "Replay of the mock tracker's recording — scrub it, speed it up to 4×, tap a player for their card.";
+        syncButtons();
+        view.emitPlayhead = (ms) => {
+          if (!dragging) scrub.value = String(ms);
+          clock.textContent = formatClock(ms);
+        };
+      }
+
+      function mountLive() {
+        if (view) {
+          view.destroy();
+          view = null;
+        }
+        scrub.max = String(recording.durationMs);
+        scrub.value = "0";
+        transport.hidden = false;
+        modeBtn.textContent = "back to replay";
+        note.textContent = "Live feed streaming at 1 Hz. A drop lands about 40 seconds in — markers drift, fade, and the banner says so; recovery is a snapshot, glided.";
+        live = createLiveSource(recording, { frameIntervalMs: 1000, dropAfter: 40, dropSeconds: 3 });
+        view = createPitchView(mount, live, { label: "number" });
+        live.onChange = (newFrames, isSnapshot) => view.setFrames(newFrames, { snapshot: isSnapshot });
+        live.start();
+      }
+
+      /* --------------------------------------------------------- transport */
+      let dragging = false;
+      let pressed = false;
+      scrub.addEventListener("input", () => {
+        dragging = true;
+        view?.seek(Number(scrub.value));
+        clock.textContent = formatClock(Number(scrub.value));
+      });
+      scrub.addEventListener("change", () => {
+        dragging = false;
+      });
+
+      function syncButtons() {
+        const playing = view?.__debug.state.playing;
+        playPause.textContent = playing ? "⏸ pause" : "▶ play";
+        playPause.setAttribute("aria-pressed", String(Boolean(playing)));
+        playPause.classList.toggle("is-on", !playing);
+      }
+
+      playPause.addEventListener("click", () => {
+        const playing = view?.__debug.state.playing;
+        if (!view) return;
+        if (playing) {
+          // Pausing a replay: freeze at the current playhead.
+          view.__debug.anim.head = view.playheadMs;
+        }
+        view.setPlayback({ playing: !playing });
+        if (playing === false && view.playheadMs >= recording.durationMs) view.seek(0);
+        syncButtons();
+      });
+
+      for (const btn of document.querySelectorAll("[data-rate]")) {
+        btn.addEventListener("click", () => {
+          const rate = Number(btn.dataset.rate);
+          view?.setPlayback({ rate });
+          for (const b of document.querySelectorAll("[data-rate]")) b.classList.toggle("is-on", b === btn && !b.classList.contains("is-on") && rate === Number(b.dataset.rate));
+          syncButtons();
+        });
+      }
+
+      modeBtn.addEventListener("click", () => {
+        if (live) {
+          mountReplay();
+        } else {
+          mountLive();
+        }
+      });
+
+      mountReplay();
+      pressed = true;
+      void pressed;
+
+      /* Debug/test hooks. Same idea as view.__debug: the state is inspectable, and
+         a browser run can drive the source (seek, rate, an injected drop) instead of
+         waiting on wall clock. Not used by the page itself. */
+      window.__pitch = {
+        get view() { return view; },
+        get live() { return live; },
+        get recording() { return recording; },
+      };
+    </script>
+  </body>
+</html>

@@ -1,0 +1,250 @@
+/*
+ * Styles for the live pitch view (see static/pitch/ and docs/pitch-view.md).
+ * Scoped under .pf-root / .pf- prefixes so nothing here can reach the rest of
+ * the overlay's styles.
+ */
+
+.pf-root {
+  --pf-bg: #050510;          /* midnight black */
+  --pf-ink: #f2f0ff;
+  --pf-muted: #a49ecb;
+  --pf-accent: #8f00ff;      /* electric violet */
+  --pf-sun: #ffd900;         /* sun yellow */
+  --pf-panel: rgba(255, 255, 255, 0.05);
+  --pf-radius: 14px;
+  color: var(--pf-ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 100%;
+}
+
+.pf-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 14px;
+}
+
+.pf-head .pf-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.pf-head a {
+  color: var(--pf-muted);
+  text-decoration: none;
+}
+
+.pf-head a:hover,
+.pf-head a:focus-visible {
+  color: var(--pf-ink);
+}
+
+.pf-scoreline {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-scoreline .pf-clock {
+  color: var(--pf-muted);
+  font-size: 0.8rem;
+}
+
+/* The pitch canvas keeps the 105:68 ratio; the wrapper's aspect-ratio does it
+   before canvas sizing even runs. */
+.pf-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 105 / 68;
+  min-height: 260px;
+  border-radius: var(--pf-radius);
+  overflow: hidden;
+  background: var(--pf-bg);
+  box-shadow: 0 18px 50px -30px rgba(0, 0, 0, 0.9);
+  touch-action: manipulation;
+}
+
+.pf-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.pf-banner {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translate(-50%, -160%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--pf-sun);
+  color: var(--pf-bg);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: transform 200ms ease;
+  pointer-events: none;
+}
+
+.pf-banner::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pf-bg);
+  animation: pf-pulse 1.2s ease-in-out infinite;
+}
+
+.pf-banner.is-on {
+  transform: translate(-50%, 0);
+}
+
+@keyframes pf-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-banner::before {
+    animation: none;
+  }
+  .pf-banner {
+    transition: none;
+  }
+}
+
+/* Chips */
+.pf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pf-chip {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--pf-panel);
+  color: var(--pf-muted);
+  font: 600 0.75rem/1 system-ui, sans-serif;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.pf-chip:hover,
+.pf-chip:focus-visible {
+  color: var(--pf-ink);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.pf-chip.is-on {
+  color: #ffffff;
+  background: var(--pf-accent);
+  border-color: transparent;
+}
+
+.pf-chip[disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Replay transport */
+.pf-transport {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pf-transport .pf-scrub {
+  flex: 1 1 220px;
+  accent-color: var(--pf-accent);
+  min-width: 160px;
+}
+
+.pf-transport .pf-btn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--pf-panel);
+  color: var(--pf-ink);
+  font: 600 0.78rem/1 system-ui, sans-serif;
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.pf-transport .pf-btn:hover,
+.pf-transport .pf-btn:focus-visible {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.pf-transport .pf-btn.is-on {
+  color: #ffffff;
+  background: var(--pf-accent);
+  border-color: transparent;
+}
+
+.pf-note {
+  color: var(--pf-muted);
+  font-size: 0.78rem;
+  max-width: 70ch;
+}
+
+/* Player card */
+.pf-card {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  min-width: 180px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(5, 5, 16, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 140ms ease, transform 140ms ease;
+  pointer-events: none;
+}
+
+.pf-card.is-open {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.pf-card__head {
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+}
+
+.pf-card__rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1px 12px;
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.pf-card__rows dt {
+  color: var(--pf-muted);
+}
+
+.pf-card__rows dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
