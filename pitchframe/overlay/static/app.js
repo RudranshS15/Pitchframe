@@ -36,6 +36,7 @@
  * showing one name and the document title another.
  */
 
+import { goalKey, buildItems, reachedGoals, newestBuildUp } from "./goal-clock.mjs";
 import { createBorderGlow } from "./border-glow.js";
 import { createDock } from "./dock.js";
 import { createRubberSegment } from "./rubber-segment.js";
@@ -119,6 +120,7 @@ import { createWakeSlider } from "./wake-slider.js";
     award: $("award"), awardName: $("award-name"), awardRating: $("award-rating"),
     awardReasons: $("award-reasons"), awardText: $("award-text"),
     launchTitle: $("launch-title"), launchNote: $("launch-note"), sling: $("sling"),
+    pitchChip: $("pitch-chip"), pitchOpen: $("pitch-open"), pitchSwitch: $("pitch-switch"),
     squads: $("squads"), footMatch: $("foot-match"), footUrl: $("foot-url"),
     hl: $("hl"), hlTitle: $("hl-title"), hlGoals: $("hl-goals"), hlLabels: $("hl-labels"), hlSvg: $("hl-svg"),
     hlStep: $("hl-step"), hlReplay: $("hl-replay"), hlClose: $("hl-close"),
@@ -152,10 +154,37 @@ import { createWakeSlider } from "./wake-slider.js";
     roster: [],
   };
 
-  /* One key for "which goal is this", used on both sides of the lookup. Clock plus
-     side plus scorer is unique within a match: one player cannot score twice on the
-     same second for the same team. */
-  const goalKey = (clock, team, player) => `${clock}|${team}|${player}`;
+  /* --------------------------------------------------- the live pitch chip -- */
+
+  /* The chip on the match bar that opens the standalone pitch view, and the small
+     switch beside it that turns the entry point off and on. The choice is remembered
+     in localStorage — and even where storage is fenced off, the page's own answer
+     stands, so the switch never stops working. */
+  const PITCH_CHIP_KEY = "pitchframe:pitch-chip";
+  let pitchChipOn = (() => {
+    try { return localStorage.getItem(PITCH_CHIP_KEY) !== "off"; }
+    catch { return true; /* storage unavailable is a setting, not a fault */ }
+  })();
+
+  function renderPitchChip() {
+    el.pitchOpen.hidden = !pitchChipOn;
+    el.pitchChip.classList.toggle("pitchchip--off", !pitchChipOn);
+    el.pitchSwitch.setAttribute("aria-pressed", String(pitchChipOn));
+    el.pitchSwitch.setAttribute(
+      "aria-label",
+      pitchChipOn ? "Hide the live pitch button on the match bar"
+                  : "Show the live pitch button on the match bar",
+    );
+    el.pitchSwitch.textContent = pitchChipOn ? "on" : "off";
+  }
+
+  el.pitchSwitch.addEventListener("click", () => {
+    pitchChipOn = !pitchChipOn;
+    try { localStorage.setItem(PITCH_CHIP_KEY, pitchChipOn ? "on" : "off"); }
+    catch { /* the toggle still flips, it just is not remembered */ }
+    renderPitchChip();
+  });
+  renderPitchChip();
 
   /* ------------------------------------------------------------- helpers ----- */
 
@@ -198,38 +227,8 @@ import { createWakeSlider } from "./wake-slider.js";
     el.provider.classList.toggle("provider--live", Boolean(provider.uses_a_model));
   }
 
-  /* Build one chronological list from the document. Incidents and the analysis of a
-     window share a minute often; incidents sort first because they are the events the
-     analysis is about. */
-  function buildItems(doc) {
-    const items = [];
-
-    /* Goals come from the uncapped goal list, not from the incident lists, which are
-       capped for legibility. A goal dropped by that cap would vanish from the timeline
-       while the scoreboard still moved, and it would leave nothing to click. Taking
-       them from here also means each goal appears exactly once. */
-    doc.goals.forEach((goal) => {
-      items.push({
-        clock: goal.clock,
-        order: 0,
-        kind: "goal",
-        data: goal,
-        highlight: state.goals.get(goalKey(goal.clock, goal.team, goal.player)) || null,
-      });
-    });
-
-    doc.frames.forEach((frame) => {
-      frame.incidents.forEach((incident) => {
-        if (incident.type === "goal") return;
-        items.push({ clock: incident.clock, order: 1, kind: "incident", data: incident, frame });
-      });
-      frame.feed.forEach((row) => {
-        items.push({ clock: frame.clock, order: 2, kind: "claim", data: row, frame });
-      });
-    });
-    items.sort((a, b) => a.clock - b.clock || a.order - b.order);
-    return items;
-  }
+  /* The chronological list is built by the shared goal-sync module (goal-clock.mjs),
+     where the same decisions are unit-tested against the playhead's own stepping. */
 
   function incidentMarkup(incident) {
     return `<li class="row row--incident">
@@ -373,7 +372,7 @@ import { createWakeSlider } from "./wake-slider.js";
       el.clock.innerHTML = minuteLine;
     }
 
-    const goals = doc.goals.filter((g) => g.clock <= clock);
+    const goals = reachedGoals(doc.goals, clock);
     const home = goals.filter((g) => g.team === "home").length;
     const away = goals.filter((g) => g.team === "away").length;
     /* The same rule the scoreboard follows, applied to the dock's build-up menu: it offers
@@ -614,20 +613,14 @@ import { createWakeSlider } from "./wake-slider.js";
      feature was unreachable until the 60th minute, which reads as a control that does not
      work rather than as a match with nothing in it yet. This says what it is waiting for,
      and lights up the moment a goal lands. */
-  function newestBuildUp() {
-    const reached = state.doc
-      ? state.doc.goals.filter((goal) => goal.clock <= state.clock)
-      : [];
-    for (let index = reached.length - 1; index >= 0; index -= 1) {
-      const goal = reached[index];
-      const highlight = state.goals.get(goalKey(goal.clock, goal.team, goal.player));
-      if (highlight) return { goal, highlight };
-    }
-    return null;
+  function newestBuildUpOnPage() {
+    return state.doc
+      ? newestBuildUp(state.doc.goals, state.goals, state.clock)
+      : null;
   }
 
   function openNewestBuildUp() {
-    const newest = newestBuildUp();
+    const newest = newestBuildUpOnPage();
     if (newest) hlOpen(newest.highlight);
   }
 
@@ -637,7 +630,7 @@ import { createWakeSlider } from "./wake-slider.js";
   let launchKey = null;
 
   function renderLauncher() {
-    const newest = newestBuildUp();
+    const newest = newestBuildUpOnPage();
     const key = newest ? goalKey(newest.goal.clock, newest.goal.team, newest.goal.player) : "";
     if (key === launchKey) return;
     launchKey = key;
@@ -867,8 +860,7 @@ import { createWakeSlider } from "./wake-slider.js";
      goal it produced. */
   function reachedBuildUps() {
     if (!state.doc) return [];
-    const reached = state.doc.goals.filter((goal) => goal.clock <= state.clock);
-    return reached
+    return reachedGoals(state.doc.goals, state.clock)
       .map((goal) => ({ goal, highlight: state.goals.get(goalKey(goal.clock, goal.team, goal.player)) }))
       .filter((entry) => entry.highlight);
   }
@@ -1054,9 +1046,11 @@ import { createWakeSlider } from "./wake-slider.js";
   function setSpeed(speed) {
     state.speed = speed;
     speedSeg.set({ value: String(speed) });
-    const minutes = Math.round((MATCH_SECONDS_PER_REAL_SECOND * speed) / 60);
+    const perSecond = MATCH_SECONDS_PER_REAL_SECOND * speed;
     el.rateNote.textContent =
-      minutes === 1 ? "1 second = 1 match minute" : `1 second = ${minutes} match minutes`;
+      perSecond === 60 ? "1 second = 1 match minute"
+      : perSecond < 60 ? `1 second = ${perSecond} match seconds`
+      : `1 second = ${Math.round(perSecond / 60)} match minutes`;
     renderDock();
   }
 
@@ -1277,7 +1271,7 @@ import { createWakeSlider } from "./wake-slider.js";
     state.goals = new Map(
       doc.highlights.map((h) => [goalKey(h.clock, h.team, h.scorer), h])
     );
-    state.items = buildItems(doc);
+    state.items = buildItems(doc, state.goals);
     state.minClock = doc.frames[0].window[0];
     state.maxClock = doc.frames[doc.frames.length - 1].clock;
 
@@ -1290,6 +1284,10 @@ import { createWakeSlider } from "./wake-slider.js";
     el.footMatch.textContent =
       `${doc.home} v ${doc.away} · ${doc.frames.length} windows · seed ${doc.seed}` +
       (doc.fault === "none" ? "" : ` · fault ${doc.fault}`);
+    /* The chip opens the pitch view at the seed the payload built (not the one the URL
+       asked for), so a numbered link that the server rounded to a scenario cannot send
+       the reader looking at a different match from the one on screen. */
+    el.pitchOpen.href = `/static/pitch/pitch.html?seed=${encodeURIComponent(String(doc.seed))}`;
     renderProvider(doc.provider);
     renderSquads(doc);
 
@@ -1382,7 +1380,7 @@ import { createWakeSlider } from "./wake-slider.js";
   });
 
   const speedSeg = createRubberSegment(el.speedSeg, {
-    items: [1, 4, 16].map((value) => ({ value: String(value), label: `${value}\u00d7` })),
+    items: [0.25, 1, 4, 16].map((value) => ({ value: String(value), label: `${value}\u00d7` })),
     value: "1",
     size: "sm",
     radius: 5,
@@ -1509,15 +1507,24 @@ import { createWakeSlider } from "./wake-slider.js";
      `key` is what the browser puts in `event.key`, lower-cased — `" "` for Space and
      `"arrowleft"` for the left arrow — and `KEY_NAMES` is how that key is written for a
      reader. The digits name a position rather than a number: 16× cannot be typed as a
-     digit, so 1, 2 and 3 are the three speeds in the order they are offered, and the
-     speed menu's own rows say which key reaches each one. */
+     digit, so 1, 2 and 3 are 1×, 4× and 16× in the order they are offered, with 0 the
+     slowest — and the speed menu's own rows say which key reaches each one. */
   const KEY_NAMES = { " ": "Space", arrowleft: "\u2190", arrowright: "\u2192" };
   const keyName = (key) => KEY_NAMES[key] || key.toUpperCase();
 
   const SHORTCUTS = [
     { group: "Playback", id: "play", key: " ", label: "Play / pause", run: () => togglePlay() },
-    { group: "Seek", id: "seek-back", key: "arrowleft", label: "Back one window", run: () => seekWindows(-1) },
-    { group: "Seek", id: "seek-on", key: "arrowright", label: "Forward one window", run: () => seekWindows(1) },
+    /* These two rows name both granularities the arrows have. Away from the seek control
+       one press is one analysed window (`seekWindows`, from `window_seconds`); with the
+       seek handle itself focused the browser hands the keys to that slider instead, and
+       one press is its own step — 60 match seconds (see SEEK_STEP_SECONDS at mountSeek).
+       The menu says both, so a reader who focused the slider and found the step shorter is
+       reading the behaviour, not a bug. */
+    { group: "Seek", id: "seek-back", key: "arrowleft",
+      label: "Back one window (60s when the seek slider has focus)", run: () => seekWindows(-1) },
+    { group: "Seek", id: "seek-on", key: "arrowright",
+      label: "Forward one window (60s when the seek slider has focus)", run: () => seekWindows(1) },
+    { group: "Speed", id: "speed-0.25", key: "0", label: "0.25\u00d7", run: () => setSpeed(0.25) },
     { group: "Speed", id: "speed-1", key: "1", label: "1\u00d7", run: () => setSpeed(1) },
     { group: "Speed", id: "speed-4", key: "2", label: "4\u00d7", run: () => setSpeed(4) },
     { group: "Speed", id: "speed-16", key: "3", label: "16\u00d7", run: () => setSpeed(16) },
@@ -1564,7 +1571,7 @@ import { createWakeSlider } from "./wake-slider.js";
   function dockItems() {
     /* Only the goals the replay has reached. `state.clock` is the same cursor the
        scoreboard reads, so the menu and the score can never disagree. */
-    const reached = state.doc ? state.doc.goals.filter((goal) => goal.clock <= state.clock) : [];
+    const reached = reachedGoals(state.doc ? state.doc.goals : [], state.clock);
     const items = [
       {
         key: "play",
@@ -1579,7 +1586,7 @@ import { createWakeSlider } from "./wake-slider.js";
         icon: glyphIcon("gauge"),
         label: `Speed ${state.speed}\u00d7`,
         badge: `${state.speed}\u00d7`,
-        menu: [1, 4, 16].map((value) => ({
+        menu: [0.25, 1, 4, 16].map((value) => ({
           label: `${value}\u00d7`,
           shortcut: shortcutOf(`speed-${value}`),
           checked: state.speed === value,

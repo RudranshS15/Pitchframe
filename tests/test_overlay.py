@@ -1178,11 +1178,12 @@ class TestThePortedControls(unittest.TestCase):
                     self.assertEqual(
                         self.client.get("/static/" + target.lstrip("./")).status_code, 200
                     )
-        # app.js imports its five controls and the glow it dresses the panels with; each of
-        # the eight ports imports the shared runtime; the mode browser imports the sphere it
-        # is built on plus the glow its stage wears; and the masthead imports the wordmark
-        # and the nav it mounts.
-        self.assertEqual(seen, 18)
+        # app.js imports its five controls, the glow it dresses the panels with and the
+        # goal-clock it syncs every goal-driven surface from; each of the eight ports
+        # imports the shared runtime; the mode browser imports the sphere it is built on
+        # plus the glow its stage wears; and the masthead imports the wordmark and the nav
+        # it mounts.
+        self.assertEqual(seen, 19)
 
     def test_the_pressure_type_is_asked_for_an_axis_the_face_has(self) -> None:
         """The effect is `font-variation-settings` written on a face that answers them.
@@ -1560,8 +1561,18 @@ class TestThePortedControls(unittest.TestCase):
         """A menu naming a goal that has not happened yet spoils the replay the page exists
         to show, and it would disagree with the scoreboard about the score."""
         app = self.asset("/static/app.js")
+        # The decision itself is a pure function in goal-clock.mjs, unit-tested in
+        # tests/js against the playhead's own stepping (one clock step moves the row,
+        # the score, the launcher and the dock together). What is asserted here is that
+        # the page takes it from there rather than answering the question again in its
+        # own code — an app.js that filtered goals inline could drift away from the
+        # scoreboard and nothing unit-run would notice.
+        self.assertIn('from "./goal-clock.mjs"', app)
+        self.assertIn("reachedGoals", app)
+        # The dock's own menu is built from the same call the scoreboard is: same
+        # inputs, same cursor, so the two cannot disagree about what has happened.
         self.assertRegex(
-            app, r"goals\.filter\(\(goal\) => goal\.clock <= state\.clock\)"
+            app, r"reachedGoals\(state\.doc[^,]*,\s*state\.clock\)"
         )
 
     def test_every_port_watches_the_reduced_motion_setting(self) -> None:

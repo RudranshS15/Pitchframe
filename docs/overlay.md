@@ -914,7 +914,7 @@ and pressing the row does the thing, so the reference is usable before it has be
 | Key | What it does | The detail that matters |
 |---|---|---|
 | `Space` | Play / pause | At the end it starts again rather than doing nothing, which is the rule the transport, the dock's tile and this key all share. |
-| `←` `→` | Back / forward one window | 300 match seconds, and the step comes from `window_seconds` in the payload rather than from a constant here. It pauses: a reader steering somewhere specific has said they have finished watching for now. |
+| `←` `→` | Back / forward one window | 300 match seconds, and the step comes from `window_seconds` in the payload rather than from a constant here. It pauses: a reader steering somewhere specific has said they have finished watching for now. With the seek handle itself focused the step is 60 match seconds instead — the slider's own `role=slider` keydown, one `SEEK_STEP_SECONDS` — because a focused slider is being walked second by second, not window by window. The dock's keyboard menu names both granularities on the seek rows. |
 | `1` `2` `3` | 1×, 4×, 16× | The digits name positions rather than numbers, because 16× cannot be typed as a digit. The speed menu's own rows say which key reaches each one. |
 | `F` `A` | Fan view, Analyst view | The same two values the switch sets, so the menu, the tile and the URL still cannot disagree. |
 
@@ -923,7 +923,9 @@ Four rules the keys obey, each because the alternative breaks something:
 - **A modifier makes the key the browser's.** `F` is the Fan view and Cmd/Ctrl+F is still
   find-on-page; nothing here fires with Ctrl, Cmd or Alt held.
 - **A focused control keeps its own keys.** Space activates the focused button — the dock's
-  tiles included — and the arrows step a slider that is being tabbed through.
+  tiles included — and the arrows step a slider that is being tabbed through. That is why
+  the seek has two arrow granularities: on the document the arrows seek one analysed window;
+  once the seek handle has focus they belong to it, and step its own 60 match seconds.
 - **An open surface owns them.** While a build-up panel is up the keys are silent: the panel
   is a modal, and a key that changed the speed or the view behind it would move something
   the reader cannot see. The same goes while a dock menu is open, whose rows would otherwise
