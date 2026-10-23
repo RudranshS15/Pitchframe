@@ -985,7 +985,14 @@ class TestTheNamedMatches(unittest.TestCase):
         self.assertIn("parts[0] === \"match\"", app)
         self.assertIn("scenario=${encodeURIComponent(query.scenario)}", app)
         # The seed goes in a numbered link and not in a named one: the name is the seed.
-        self.assertIn("if (!query.scenario) {", app)
+        # The decision itself is a pure pair in frame-link.mjs (buildFrameQuery on this
+        # side, parseFrameQuery on boot, round-trip-tested in tests/js); what is asserted
+        # here is that the page takes it from there rather than answering the question
+        # again in its own code — an app.js that built the query inline could drift away
+        # from the parser and a shared link would stop naming the frame it was written
+        # at, with nothing unit-run to notice.
+        self.assertIn('from "./frame-link.mjs"', app)
+        self.assertIn("named: !!query.scenario", app)
 
 
 @requires_server
@@ -1178,12 +1185,12 @@ class TestThePortedControls(unittest.TestCase):
                     self.assertEqual(
                         self.client.get("/static/" + target.lstrip("./")).status_code, 200
                     )
-        # app.js imports its five controls, the glow it dresses the panels with and the
-        # goal-clock it syncs every goal-driven surface from; each of the eight ports
-        # imports the shared runtime; the mode browser imports the sphere it is built on
-        # plus the glow its stage wears; and the masthead imports the wordmark and the nav
-        # it mounts.
-        self.assertEqual(seen, 19)
+        # app.js imports its five controls, the glow it dresses the panels with, the
+        # goal-clock it syncs every goal-driven surface from and the frame-link pair the
+        # shareable URL is built and read through; each of the eight ports imports the
+        # shared runtime; the mode browser imports the sphere it is built on plus the glow
+        # its stage wears; and the masthead imports the wordmark and the nav it mounts.
+        self.assertEqual(seen, 20)
 
     def test_the_pressure_type_is_asked_for_an_axis_the_face_has(self) -> None:
         """The effect is `font-variation-settings` written on a face that answers them.

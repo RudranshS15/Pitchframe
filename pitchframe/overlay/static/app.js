@@ -43,6 +43,7 @@ import {
   newestBuildUp,
   frameAt,
 } from "./goal-clock.mjs";
+import { buildFrameQuery, parseFrameQuery } from "./frame-link.mjs";
 import { createBorderGlow } from "./border-glow.js";
 import { createDock } from "./dock.js";
 import { createRubberSegment } from "./rubber-segment.js";
@@ -970,27 +971,27 @@ import { createWakeSlider } from "./wake-slider.js";
   let lastShareMs = 0;
 
   function shareUrl() {
-    const share = new URLSearchParams();
     /* A named match is named in the path, and nothing about the match goes in the query:
        the name is the seed. A numbered one carries the seed the payload was actually built
        from, rather than the one this page asked for — a link that omitted the seed and
        inherited the server's default has to carry the match it opened, or opening it later
-       would build a different one. */
-    if (!query.scenario) {
-      share.set("seed", String(state.doc ? state.doc.seed : query.seed));
-    }
-    share.set("match_id", query.match_id);
-    share.set("fault", query.fault);
-    share.set("view", document.body.dataset.view || query.view);
-    share.set("at", String(Math.round(state.clock)));
+       would build a different one. The build rule lives in frame-link.mjs, tested as a
+       round trip against the parse below. */
     /* Only while the panel is actually on screen, and keyed the same way the timeline
        keys it, so the link names a goal in the payload's own vocabulary rather than in
        one of its own. `open` is read rather than `hl.data` alone: the element is the
        only thing that knows the panel is gone, whatever dismissed it. */
-    if (el.hl.open && hl.data) {
-      share.set("goal", goalKey(hl.data.clock, hl.data.team, hl.data.scorer));
-    }
-    return `${location.pathname}?${share}`;
+    return `${location.pathname}?${buildFrameQuery({
+      named: !!query.scenario,
+      seed: state.doc ? state.doc.seed : query.seed,
+      matchId: query.match_id,
+      fault: query.fault,
+      view: document.body.dataset.view || query.view,
+      at: state.clock,
+      goal: el.hl.open && hl.data
+        ? goalKey(hl.data.clock, hl.data.team, hl.data.scorer)
+        : null,
+    })}`;
   }
 
   function writeShare({ now = 0 } = {}) {
@@ -1005,15 +1006,11 @@ import { createWakeSlider } from "./wake-slider.js";
   /* Open on the frame the URL describes, and say whether it described one. The caller
      falls back to its own default — replay from the first window — when it did not. */
   function restoreFrame() {
-    /* Only a positive number is a position. Absent and empty must not read as zero —
-       Number(null) and Number("") are both 0 — and neither must a negative or a
-       truncated value, because a link to zero seconds asks for the same thing as no
-       link at all: the match from the beginning. */
-    const seconds = Number(query.at);
-    const position =
-      query.at !== null && query.at !== "" && Number.isFinite(seconds) && seconds > 0
-        ? seconds
-        : NaN;
+    /* The position rule — only a positive number is a position, absent and empty must
+       not read as zero, nor a negative or a truncated value, because a link to zero
+       seconds asks for the same thing as no link at all — is decided in
+       frame-link.mjs, round-tripped against the build above. */
+    const { position } = parseFrameQuery(query);
     const highlight = query.goal ? state.goals.get(query.goal) : null;
     if (!Number.isFinite(position) && !highlight) return false;
 
