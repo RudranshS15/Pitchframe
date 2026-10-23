@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pitchframe — session report, 23 October 2026</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    font: 10.5pt/1.55 Georgia, "Times New Roman", serif;
+    color: #1c1f24; margin: 0; padding: 0;
+  }
+  .page { max-width: 46rem; margin: 0 auto; padding: 2.4rem 2rem 2rem; }
+  h1 { font: 700 20pt/1.25 Georgia, serif; margin: 0 0 0.2rem; letter-spacing: -0.01em; }
+  h2 {
+    font: 700 12.5pt/1.3 Georgia, serif; margin: 1.9rem 0 0.5rem;
+    border-bottom: 1.5pt solid #1c1f24; padding-bottom: 0.25rem;
+  }
+  h3 { font: 700 10.5pt/1.3 Georgia, serif; margin: 1.1rem 0 0.3rem; }
+  p { margin: 0.4rem 0; }
+  .kicker {
+    font: 600 8.5pt/1.4 "Segoe UI", system-ui, sans-serif; text-transform: uppercase;
+    letter-spacing: 0.12em; color: #6b7280; margin-bottom: 1.6rem;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 0.6rem 0 0.4rem; font-size: 9.5pt; }
+  th, td { text-align: left; padding: 0.35rem 0.6rem; border-bottom: 0.5pt solid #d7dae0; vertical-align: top; }
+  th { font: 600 8.5pt/1.3 "Segoe UI", system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.06em; color: #4b5563; }
+  td code, p code, li code {
+    font: 9pt/1.4 Consolas, "Cascadia Mono", monospace; background: #f1f3f6;
+    padding: 0.05em 0.3em; border-radius: 3px; word-break: break-all;
+  }
+  .sha { font-family: Consolas, monospace; font-size: 9pt; white-space: nowrap; }
+  ul, ol { margin: 0.4rem 0 0.6rem; padding-left: 1.4rem; }
+  li { margin: 0.22rem 0; }
+  .verdict { border-left: 3pt solid #1c1f24; padding: 0.35rem 0.9rem; margin: 0.7rem 0; background: #f7f8fa; }
+  .label { font: 600 8.5pt/1.4 "Segoe UI", system-ui, sans-serif; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; }
+  blockquote {
+    margin: 0.5rem 0; padding: 0.5rem 0.9rem; background: #f1f3f6;
+    border-left: 3pt solid #9aa3af; font-size: 9.5pt;
+  }
+  blockquote p { margin: 0.15rem 0; }
+  .foot { margin-top: 2rem; border-top: 0.5pt solid #d7dae0; padding-top: 0.6rem;
+          font: 8.5pt/1.5 "Segoe UI", system-ui, sans-serif; color: #6b7280; }
+  @media print {
+    .page { padding: 1.2rem 0.4rem; }
+    h2 { break-after: avoid; }
+    table, blockquote, .verdict { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Pitchframe — session report</h1>
+<p class="kicker">23 October 2026 · branch <span class="sha">main</span> · overlay refactors, harness, tests, docs</p>
+
+<p>One working session on the Pitchframe overlay: three pure-module extractions out of
+<code>app.js</code>, one cross-language test, one skip guard, one copy module, one harness
+deflake, and full verification — Python suite, JavaScript suite, and the gated browser
+harness — plus a live check of the served page. Everything is committed on
+<code>main</code> as <span class="sha">96a319e</span> and after.</p>
+
+<h2>1 · Commits, in order</h2>
+<table>
+<tr><th>Commit</th><th>What it did</th></tr>
+<tr><td class="sha">73cba79</td><td>The analysed-window cursor moved into <code>goal-clock.mjs</code> as <code>frameAt</code>, next to the goal-sync rules it belongs with.</td></tr>
+<tr><td class="sha">6b3ca3f</td><td>The shareable frame link moved to <code>frame-link.mjs</code> — both directions, <code>buildFrameQuery</code> and <code>parseFrameQuery</code>, round-tripped against each other in tests.</td></tr>
+<tr><td class="sha">455670e</td><td>The relative-movement ranking became one rule in two languages: <code>rank-agreement.test.mjs</code> holds the browser's <code>rankByRelativeMovement</code> and the server's <code>rank_by_relative_movement</code> (demo.py) to one order on identical fixtures.</td></tr>
+<tr><td class="sha">f297579</td><td>That probe now <em>skips</em>, not fails, when no Python runtime is reachable. It tries <code>PYTHON</code>, then <code>python</code>/<code>py</code>/<code>python3</code> (the Windows Store alias was polluting output), and the skip message says what to do: set <code>PYTHON</code>. Verified both ways — 5/5 with an interpreter, 1 pass + 4 skipped with <code>PATH</code> stripped.</td></tr>
+<tr><td class="sha">186aa37</td><td>The rate note and the ledger's plurals moved to <code>wording.mjs</code> as <code>rateNote</code> and <code>plural</code>, with tests pinning the boundaries (60 is a minute <em>by equality</em>; 90 rounds up to minutes; zero is plural). One deliberate non-change, noted in the code: the rejected-ledger branch's hardcoded “lines” stayed as written — harmonising it is a copy edit, not a refactor (see §4).</td></tr>
+<tr><td class="sha">96a319e</td><td>The analyst-column wheel probe in the browser harness was deflaked (see §2).</td></tr>
+</table>
+
+<h2>2 · The browser harness, and the flake</h2>
+<p>The gated harness (<code>PITCHFRAME_BROWSER=1 python -m unittest tests.test_browser_harness</code>,
+13 tests) failed its analyst-column wheel check twice — “the wheel over the column does not
+scroll it” — then passed twice on identical code. Diagnosis: the probe dispatched one CDP
+<code>mouseWheel</code> turn and read <code>scrollTop</code> one fixed sleep later, racing
+the browser's scroll scheduler. The refactors under test were exonerated by the unit suites
+in any case.</p>
+<p>The fix keeps the assertion about the page and drops the only thing that was ever timing:
+the gesture repeats until the page answers, and the answer is polled with the harness's own
+<code>waitFor</code> helper rather than timed. After the fix, <strong>three consecutive
+13/13 green runs</strong> where the old probe failed two of four.</p>
+
+<h2>3 · Verification of the served page</h2>
+<p>The server on port 8000 was <em>stale</em> — its code hash predated the refactors, and the
+project's own <code>stale.py</code> refuses to trust anything it answers. It was killed and
+restarted per the documented <code>python -m pitchframe --overlay</code>; the fresh server
+reports <code>"stale": false</code> and serves the new modules. Exercised over HTTP:</p>
+<ul>
+<li><strong>Boot and board</strong> — replay running, 20 feed rows, the <code>frameAt</code>-driven board correct, rate note “1 second = 1 match minute”, share URL written by the refactored builder with no seed on a named match.</li>
+<li><strong>Numbered deep link</strong> (<code>/match?seed=28&amp;at=2700</code>) — redirected to <code>/match/matchday</code>, restored at <strong>45′ paused</strong>, score 1–2: <code>parseFrameQuery</code> working in the served page.</li>
+<li><strong>Goal deep link</strong> (<code>?goal=1570|home|Casek</code>) — build-up panel open (“26′ · Casek · Northgate Athletic”), paused at the goal's own clock, rewritten URL carries <code>at=1570</code> — the goal-clock fallback surviving a full build → parse round trip in the served page.</li>
+</ul>
+<p>Suite status at the end of the session: <strong>532/532 Python</strong>, <strong>44/44 JavaScript</strong>
+(unit), <strong>13/13 browser harness</strong> ×3 runs.</p>
+
+<h2>4 · Proposed, awaiting approval: the ledger's copy</h2>
+<p>The ledger sentence is asymmetric in a way that shows: the accepted branch goes through
+the shared <code>plural</code> (“1 line published…”, “2 lines published…”), while the
+rejected branch passes <code>"lines"</code> pre-pluralised — preserved verbatim by commit
+<span class="sha">186aa37</span> on purpose. That preservation has a consequence: with
+<code>verified = 1</code> and any rejections, the page prints
+<strong>“1 lines published”</strong> — a grammatical wart, not just an asymmetry.</p>
+<div class="verdict">
+<span class="label">Proposed copy (recommended)</span>
+<pre style="font:9pt/1.5 Consolas,monospace;margin:0.4rem 0 0.2rem;white-space:pre-wrap;">ledger.rejected
+  ? `${plural(ledger.verified, "line")} published, ${plural(ledger.rejected, "claim")} caught by measurement and corrected.`
+  : `${plural(ledger.verified, "line")} published, each one checked against the event stream.`</pre>
+<p style="font-size:9.5pt;">One-word change (“lines” → passed through <code>plural</code> as <code>"line"</code>).
+Kills the “1 lines” wart; every other word is untouched, so the existing wording tests hold.</p>
+</div>
+<p>Alternatives, if a different register is wanted:</p>
+<ul>
+<li><strong>Collective “lines” kept</strong> — reword the accepted branch to match
+(“…published, each one checked…”, plural always), accepting “1 lines” in the rare
+one-line-and-rejected case. Not recommended: it keeps the wart.</li>
+<li><strong>Restructure both branches</strong> so they read parallel
+(“N lines published; M caught and corrected.”). Cleaner copy, but a larger wording change
+than the session's rule — “this extraction changes wording nowhere” — allows.</li>
+</ul>
+<p><em>Nothing has been edited or committed for this yet; it waits for approval.</em></p>
+
+<h2>5 · The <code>app.js</code> sweep — remaining extraction candidates</h2>
+<p>A read of all 1,803 lines against the standard the earlier extractions set (a pure
+decision, moved next to its own tests). Report only — no code changed. In descending order
+of value:</p>
+<table>
+<tr><th>Candidate</th><th>Where</th><th>The decision it hides</th><th>Assessment</th></tr>
+<tr>
+  <td><strong>A numeric/figure formatting module</strong> — <code>signed</code>, <code>claimedSigned</code>, <code>arrow</code>, <code>pct</code>-style share formatting</td>
+  <td>helpers block, ~lines 310–345; share bar in <code>renderBoard</code></td>
+  <td><code>claimedSigned</code> signs a stored-positive magnitude by its direction (reading it raw prints “down +0.07” beside a measured “down −0.07”); <code>arrow</code> maps flat/up/down to ·/▲/▼; <code>signed</code> prints an em-dash for null. All pure.</td>
+  <td>Strongest candidate. Three real decisions with boundary cases worth tests, same shape as <code>wording.mjs</code>.</td>
+</tr>
+<tr>
+  <td><strong>The displayed-minute rule</strong> — <code>Math.min(minuteOf(...), 90 + Math.floor(Math.max(0, clock − 5400)/60))</code></td>
+  <td><code>renderBoard</code>, first lines</td>
+  <td>The scoreboard clamps the minute and derives second-half stoppage from 90′ at 5400&nbsp;s. Inline arithmetic wearing a football rule.</td>
+  <td>Strong. One named function (<code>displayMinute</code>) in the same module as A; testable (clock 5700 → 95′).</td>
+</tr>
+<tr>
+  <td><strong>Match-name path parsing</strong> — <code>namedMatch</code></td>
+  <td>top of <code>app.js</code>, after the imports</td>
+  <td><code>/match/&lt;name&gt;</code> is read from the path, not the query. It is URL <em>reading</em>, which is <code>frame-link.mjs</code>'s subject already.</td>
+  <td>Good, small: consolidates all URL reading in one tested module.</td>
+</tr>
+<tr>
+  <td><strong>Build-up step label</strong> — <code>stepLabel</code></td>
+  <td>the goal build-up section</td>
+  <td><code>"pass (derived) · Rhee 12′"</code> — a copy rule: derived-ness appended, separator, minute glyph.</td>
+  <td>Good, small: belongs beside <code>plural</code>/<code>rateNote</code> in <code>wording.mjs</code>.</td>
+</tr>
+<tr>
+  <td><strong>Build-up animation pacing</strong> — <code>hlAdvance</code></td>
+  <td>the build-up animation loop</td>
+  <td>How one real-time slice advances across several step boundaries (a slow frame may not stretch the move). Pure arithmetic over <code>{done, t, speed}</code>.</td>
+  <td>Moderate: testable and genuinely pure, but it is animation mechanics, not a wording/numbering rule — a new module (<code>move-clock.mjs</code>?) for one function.</td>
+</tr>
+<tr>
+  <td><strong>Key naming</strong> — <code>keyName</code>/<code>KEY_NAMES</code></td>
+  <td>the keyboard section</td>
+  <td><code>" "</code> prints “Space”, arrows print glyphs, the rest upper-case.</td>
+  <td>Weak: one-line fallback beside the <code>SHORTCUTS</code> table it describes; moving it separates it from the table that gives it meaning.</td>
+</tr>
+</table>
+<p>Not candidates: <code>copyText</code>/<code>legacyCopy</code> (browser-coupled, and their
+deadline race is the behaviour being tested), the markup builders (templates, not
+decisions), and the port wiring (each control's options are the page saying what the
+control means).</p>
+
+<div class="foot">
+Generated from the working session on 23 October 2026 · Pitchframe <code>main</code> at
+<span class="sha">96a319e</span> · tests at close: 532 Python · 44 JS · 13/13 harness ×3 ·
+committed and pushed after this report.
+</div>
+
+</div>
+</body>
+</html>
