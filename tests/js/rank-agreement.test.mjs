@@ -67,26 +67,26 @@ function keyOf(r) {
   return r.team === null ? r.metric : `${r.metric}@${r.team}`;
 }
 
-/* The narrator drops flat readings; a Python probe for a fixture is one spawn. */
+/* Finding the interpreter, once. PYTHON wins when a caller knows better than
+ * PATH does (the venv, CI's setup-python), then the usual names — the Windows
+ * launcher included, since `python` there is often the Store alias, which exits
+ * with a nag instead of a version. Probes are silenced so a missing runtime
+ * cannot litter the test output with an installer's advertisement. */
+const SKIP_REASON =
+  "no Python runtime reachable — the cross-language half of this test needs one " +
+  "(set PYTHON to the interpreter to run it)";
 let python = null;
-try {
-  execFileSync("python", ["--version"], { cwd: PY_ROOT });
-  python = "python";
-} catch {
+for (const candidate of [process.env.PYTHON, "python", "py", "python3"].filter(Boolean)) {
   try {
-    execFileSync("py", ["--version"], { cwd: PY_ROOT });
-    python = "py";
+    execFileSync(candidate, ["--version"], { cwd: PY_ROOT, stdio: "ignore" });
+    python = candidate;
+    break;
   } catch {
-    python = null;
+    /* try the next candidate; none left means the Python tests skip below */
   }
 }
 
-let skipped = 0;
 function pythonOrder(readings, { keepFlat = false } = {}) {
-  if (python === null) {
-    skipped += 1;
-    return null;
-  }
   const payload = JSON.stringify(
     readings.map((r) => ({
       metric: r.metric,
@@ -183,39 +183,44 @@ test("relative movement ranks by story, not by units", () => {
   );
 });
 
-test("the board's order and the narrator's Python order agree, key for key", () => {
-  for (const [name, readings] of [
-    ["scale-spanning", SCALE_SPANNING],
-    ["ties and flats", WITH_TIES_AND_FLATS],
-    ["board span", BOARD_SPAN_FIXTURE],
-  ]) {
-    const actual = jsOrder(readings);
-    const expected = pythonOrder(readings, { keepFlat: true });
-    if (expected === null) {
-      skipped += 1;
-      continue;
+test(
+  "the board's order and the narrator's Python order agree, key for key",
+  { skip: python === null ? SKIP_REASON : false },
+  () => {
+    for (const [name, readings] of [
+      ["scale-spanning", SCALE_SPANNING],
+      ["ties and flats", WITH_TIES_AND_FLATS],
+      ["board span", BOARD_SPAN_FIXTURE],
+    ]) {
+      const actual = jsOrder(readings);
+      const expected = pythonOrder(readings, { keepFlat: true });
+      assert.deepEqual(
+        actual,
+        expected,
+        `${name}: the board ranked ${actual.join(" > ")} but Python ranked ${expected.join(" > ")}`,
+      );
     }
-    assert.deepEqual(
-      actual,
-      expected,
-      `${name}: the board ranked ${actual.join(" > ")} but Python ranked ${expected.join(" > ")}`,
-    );
-  }
-  assert.ok(skipped === 0 || python !== null, "no Python was probed despite being reachable");
-});
+  },
+);
 
-test("ties keep the payload's order in both languages", () => {
+test(
+  "ties keep the payload's order in both languages",
+  { skip: python === null ? SKIP_REASON : false },
+  () => {
   const actual = jsOrder(WITH_TIES_AND_FLATS);
   const expected = pythonOrder(WITH_TIES_AND_FLATS, { keepFlat: true });
-  assert.ok(expected !== null, "the tie order needs the Python probe");
   assert.deepEqual(actual, expected);
   const home = actual.indexOf("share@home");
   const away = actual.indexOf("share@away");
   assert.ok(home !== -1 && away !== -1, `the tied pair vanished: ${actual}`);
   assert.ok(home < away, `the tie broke to the payload's disadvantage: ${actual.join(" > ")}`);
-});
+  },
+);
 
-test("flat readings stay in the board's table, never reach a claim, both runtimes", () => {
+test(
+  "flat readings stay in the board's table, never reach a claim, both runtimes",
+  { skip: python === null ? SKIP_REASON : false },
+  () => {
   const kept = jsOrder(WITH_TIES_AND_FLATS);
   assert.equal(kept.length, WITH_TIES_AND_FLATS.length, "the board dropped a flat row");
   const narratedOrder = narratorJsOrder(WITH_TIES_AND_FLATS);
@@ -233,11 +238,15 @@ test("flat readings stay in the board's table, never reach a claim, both runtime
   const pyNarrated = pythonOrder(WITH_TIES_AND_FLATS, { keepFlat: false });
   assert.deepEqual(pyNarrated, pyKept.filter((key) => key !== "tempo" && key !== "recoveries"),
     `Python's two variants disagreed beyond the flats: ${pyNarrated} vs ${pyKept}`);
-});
+  },
+);
 
-test("the strictest form: the narrator's Python order matches the narrator's JS order", () => {
-  const expected = pythonOrder(SCALE_SPANNING, { keepFlat: false });
-  assert.ok(expected !== null, "the Python probe is the point of this test");
-  const actual = narratorJsOrder(SCALE_SPANNING);
-  assert.deepEqual(actual, expected, `narrator ranks diverged: ${actual} vs ${expected}`);
-});
+test(
+  "the strictest form: the narrator's Python order matches the narrator's JS order",
+  { skip: python === null ? SKIP_REASON : false },
+  () => {
+    const expected = pythonOrder(SCALE_SPANNING, { keepFlat: false });
+    const actual = narratorJsOrder(SCALE_SPANNING);
+    assert.deepEqual(actual, expected, `narrator ranks diverged: ${actual} vs ${expected}`);
+  },
+);
