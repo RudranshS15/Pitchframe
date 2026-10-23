@@ -45,6 +45,7 @@ import {
 } from "./goal-clock.mjs";
 import { buildFrameQuery, parseFrameQuery } from "./frame-link.mjs";
 import { rankByRelativeMovement } from "./relative-rank.mjs";
+import { plural, rateNote } from "./wording.mjs";
 import { createBorderGlow } from "./border-glow.js";
 import { createDock } from "./dock.js";
 import { createRubberSegment } from "./rubber-segment.js";
@@ -422,9 +423,13 @@ import { createWakeSlider } from "./wake-slider.js";
     el.ledCorrections.textContent = ledger.corrections;
     el.ledDropped.textContent = ledger.dropped;
 
+    /* Both counts go through the shared plural. The rejected branch passes
+       "lines" pre-pluralised, because that is the copy as written — it says
+       "lines" whatever the verified count is, and this extraction changes
+       wording nowhere; harmonising it is a copy edit, not a refactor. */
     el.promoText.textContent = ledger.rejected
-      ? `${ledger.verified} lines published, ${ledger.rejected} claim${ledger.rejected === 1 ? "" : "s"} caught by measurement and corrected.`
-      : `${ledger.verified} line${ledger.verified === 1 ? "" : "s"} published, each one checked against the event stream.`;
+      ? `${plural(ledger.verified, "lines")} published, ${plural(ledger.rejected, "claim")} caught by measurement and corrected.`
+      : `${plural(ledger.verified, "line")} published, each one checked against the event stream.`;
   }
 
   /* ------------------------------------------------------- the analyst column ---- */
@@ -1038,11 +1043,7 @@ import { createWakeSlider } from "./wake-slider.js";
   function setSpeed(speed) {
     state.speed = speed;
     speedSeg.set({ value: String(speed) });
-    const perSecond = MATCH_SECONDS_PER_REAL_SECOND * speed;
-    el.rateNote.textContent =
-      perSecond === 60 ? "1 second = 1 match minute"
-      : perSecond < 60 ? `1 second = ${perSecond} match seconds`
-      : `1 second = ${Math.round(perSecond / 60)} match minutes`;
+    el.rateNote.textContent = rateNote(MATCH_SECONDS_PER_REAL_SECOND * speed);
     renderDock();
   }
 
