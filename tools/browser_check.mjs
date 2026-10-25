@@ -907,7 +907,60 @@ out.pressure = await evaluate(`(async () => {
     host.remove();
   }
   return readings;
-})()`);
+})()`);/* ---------------------------------------------------------- the planted fault -- */
+
+/* The fault is the product: the board must not just hold a planted claim, it must name
+   it. The faulted match is stepped one analysed window at a time until a planted row is
+   on the feed — a step, not a seek to the end, because the page reveals a window's rows
+   together and at the end every planted row is already on screen. The readings are the
+   row's own tag and its why-line, and what the check panel carries at that same clock.
+   The un-faulted match is stepped to its last window too, as a negative control: the same
+   page without the fault plants nothing. */
+out.fault = await (async () => {
+  const pause = "(() => { document.getElementById('play')?.click(); document.activeElement?.blur?.(); window.scrollTo(0, 0); return true; })()";
+  const readBoard = `(() => {
+    const row = document.querySelector('#feed-list .row--claim:has(.tag--planted)');
+    const chip = document.getElementById('check-chip');
+    return {
+      row: row ? {
+        classes: row.className.replace(/\\s+/g, ' ').trim(),
+        tags: [...row.querySelectorAll('.tag')].map((t) => t.textContent.trim()),
+        why: (row.querySelector('.row__why') || {}).textContent || ''
+      } : null,
+      plantedCount: document.querySelectorAll('#feed-list .tag--planted').length,
+      windowText: (document.getElementById('check-window') || {}).textContent || '',
+      checkState: (document.getElementById('check') || {}).dataset.state || '',
+      chipHidden: !!chip.hidden,
+      chipText: chip.textContent.trim()
+    };
+  })()`;
+
+  const visit = async (url, seeks) => {
+    at = url;
+    await send("Page.navigate", { url });
+    if (!(await waitFor("document.readyState === 'complete' && !!document.querySelector('#feed-list')", 30000))) {
+      return { ready: false, found: false, plantedCount: null, checkState: null, chipHidden: null, chipText: null };
+    }
+    await evaluate(pause);
+    await sleep(300);
+    let board = await evaluate(readBoard);
+    for (let i = 0; i < seeks; i++) {
+      await press("ArrowRight", "ArrowRight", 39);
+      await sleep(120);
+      board = await evaluate(readBoard);
+    }
+    return {
+      ready: true,
+      found: (board.plantedCount || 0) > 0,
+      ...board
+    };
+  };
+
+  return {
+    faulted: await visit(`${BASE}${MATCH_PATH}?fault=narrator-invert`, 40),
+    clean: await visit(`${BASE}${MATCH_PATH}?fault=none`, 40)
+  };
+})();
 
 out.problems = problems;
 console.log(JSON.stringify(out, null, 2));

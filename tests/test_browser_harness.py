@@ -349,6 +349,66 @@ class BrowserHarnessTest(unittest.TestCase):
             "the wheel at the end of the column is swallowed instead of scrolling the page",
         )
 
+    # ------------------------------------------------------- the planted fault -- */
+
+    def test_the_board_names_the_planted_fault(self) -> None:
+        """The fault is the product: the board must name it, and the clean page must not.
+
+        A planted fault presented as a natural error would make the catch unfalsifiable —
+        the planting would be done by the same code reporting the catch — so the row says
+        "planted fault" in its own tag, and its why-line says the planting was deliberate.
+        The un-faulted match, stepped to its last window the same way, shows nothing planted
+        anywhere. The chip's own rule is held on both pages: a hidden chip carries no text,
+        and a visible chip reads "planted fault" and nothing else.
+        """
+        faulted = self.report["fault"]["faulted"]
+        self.assertTrue(faulted["ready"], "the faulted match page did not load")
+        self.assertTrue(
+            faulted["found"],
+            f"the faulted match revealed no planted row (plantedCount {faulted['plantedCount']})",
+        )
+        row = faulted["row"] or {}
+        self.assertIn(
+            "planted fault",
+            row.get("tags", []),
+            f"the planted row is not labelled planted fault: {row.get('tags')!r}",
+        )
+        self.assertIn(
+            "row--rejected",
+            row.get("classes", ""),
+            "a planted fault is a rejected row; a planted label on any other kind is ambiguous",
+        )
+        self.assertTrue(
+            row.get("why", ""),
+            "the planted row gives no reason; a rejected line without one reads as an opinion",
+        )
+        self.assertIn(
+            "but the claim says",
+            row.get("why", ""),
+            f"the planted row does not show the discrepancy against the claim: {row.get('why')!r}",
+        )
+
+        clean = self.report["fault"]["clean"]
+        self.assertTrue(clean["ready"], "the clean match page did not load")
+        self.assertFalse(
+            clean["found"],
+            f"the clean match planted {clean['plantedCount']} row(s); a faulted page only",
+        )
+
+        for visit, board in self.report["fault"].items():
+            with self.subTest(visit=visit):
+                self.assertEqual(
+                    board["chipHidden"],
+                    not board["chipText"],
+                    f"the check chip on the {visit} page carries an empty label",
+                )
+                if not board["chipHidden"]:
+                    self.assertEqual(
+                        board["chipText"],
+                        "planted fault",
+                        f"the check chip on the {visit} page says {board['chipText']!r}",
+                    )
+
     # ---------------------------------------------------------- the team sheet -- */
 
     def test_the_team_sheet_shows_both_benches(self) -> None:
