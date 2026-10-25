@@ -22,6 +22,7 @@ from pitchframe.overlay.stale import (
     CodeState,
     code_state,
     source_digest,
+    static_digest,
 )
 
 
@@ -78,6 +79,31 @@ class TheDigestMovesWithTheCode(unittest.TestCase):
         self._write("overlay/static/styles.css", "body { color: red; }\n")
         self._write("notes.md", "# not source\n")
         self.assertEqual(before, source_digest(self.root))
+
+
+class TheStaticDigestSaysWhatIsServed(unittest.TestCase):
+    """The static tree's digest answers the deployed instance's "which page is this?"
+
+    The process cannot go stale on static assets — they are re-read per request — so
+    this digest is not a staleness guard. It is the answer to a different question:
+    which assets, exactly, is this server carrying right now.
+    """
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+
+    def test_a_static_edit_changes_the_digest(self) -> None:
+        (self.root / "app.js").write_text("console.log(1);\n", encoding="utf-8")
+        before = static_digest(self.root)
+        (self.root / "app.js").write_text("console.log(2);\n", encoding="utf-8")
+        self.assertNotEqual(before, static_digest(self.root))
+
+    def test_the_real_static_tree_hashes(self) -> None:
+        """The packaged static folder is digestible and repeatable."""
+        self.assertEqual(static_digest(), static_digest())
+        self.assertNotEqual(static_digest(), "")
 
 
 class TheMessageSaysWhatChanged(unittest.TestCase):

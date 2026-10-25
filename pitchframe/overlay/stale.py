@@ -30,6 +30,7 @@ without being edited counts as unchanged.
 from __future__ import annotations
 
 import hashlib
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,6 +40,8 @@ __all__ = [
     "LOADED_DIGEST",
     "code_state",
     "source_digest",
+    "static_digest",
+    "LOADED_AT",
 ]
 
 #: What a stale process should tell its operator to do.
@@ -58,6 +61,20 @@ def _sources(root: Path) -> dict[str, bytes]:
             continue
         # Normalised separators, so a digest taken on Windows matches one taken
         # anywhere else — otherwise the same checkout reads as changed code.
+        found[path.relative_to(root).as_posix()] = path.read_bytes()
+    return found
+
+
+def _all_files(root: Path) -> dict[str, bytes]:
+    """Every file under ``root``, keyed by a portable relative path — no suffix filter.
+
+    Static trees are CSS and JavaScript and HTML; only bytecode-like noise is
+    excluded, by the same rule :func:`_sources` applies.
+    """
+    found: dict[str, bytes] = {}
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or "__pycache__" in path.parts:
+            continue
         found[path.relative_to(root).as_posix()] = path.read_bytes()
     return found
 
@@ -117,6 +134,27 @@ class CodeState:
 #: that imported this one.
 _LOADED = _sources(_package_root())
 LOADED_DIGEST = _digest_of(_LOADED)
+
+#: When this process started, in epoch seconds — the health endpoint reports it, so
+#: a deployed server answers "is this the restart I just did?" without a shell.
+LOADED_AT = time.time()
+
+
+def static_digest(root: Path | None = None) -> str:
+    """A digest of the overlay's static assets as they are on disk now.
+
+    Python source is the only thing a process can go stale on — static assets are
+    re-read on every request — but a judge asking a deployed server "which page is
+    this, exactly?" is asking about the tree the server is serving right now, and a
+    hash answers it without guessing. Everything under ``static/`` counts, by the
+    same content-not-timestamp rule :func:`source_digest` applies.
+
+    Args:
+        root: which directory to read. Defaults to this package's ``static/``; a
+            test passes a temporary directory, as it does for the source digest.
+    """
+    static_root = Path(__file__).resolve().parent / "static" if root is None else root
+    return _digest_of(_all_files(static_root))
 
 
 def code_state() -> CodeState:

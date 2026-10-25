@@ -47,7 +47,7 @@ from .replay import (
     DEFAULT_WINDOW_SECONDS,
     build_replay,
 )
-from .stale import code_state
+from .stale import LOADED_AT, code_state, static_digest
 
 __all__ = ["create_app", "app", "MAX_WINDOWS"]
 
@@ -358,7 +358,12 @@ def create_app() -> FastAPI:
                 "current": state.current,
                 "stale": state.is_stale,
                 "changed": list(state.changed),
+                # The static tree is served fresh, but its digest is the way a deployed
+                # instance says which assets it carries — same reason as the hash.
+                "static": static_digest(),
             },
+            # When this process started, so a restart can be confirmed from the probe.
+            "started": LOADED_AT,
         }
 
     application.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
