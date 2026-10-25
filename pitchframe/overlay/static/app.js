@@ -423,12 +423,13 @@ import { createWakeSlider } from "./wake-slider.js";
     el.ledCorrections.textContent = ledger.corrections;
     el.ledDropped.textContent = ledger.dropped;
 
-    /* Both counts go through the shared plural. The rejected branch passes
-       "lines" pre-pluralised, because that is the copy as written — it says
-       "lines" whatever the verified count is, and this extraction changes
-       wording nowhere; harmonising it is a copy edit, not a refactor. */
+    /* Both counts go through the shared plural, in both branches.
+       "1 lines published" was the wart the extraction preserved on
+       purpose, waiting for this edit: the rejected branch now reads the
+       verified count through plural() too, so the boundary is "1 line
+       published". */
     el.promoText.textContent = ledger.rejected
-      ? `${plural(ledger.verified, "lines")} published, ${plural(ledger.rejected, "claim")} caught by measurement and corrected.`
+      ? `${plural(ledger.verified, "line")} published, ${plural(ledger.rejected, "claim")} caught by measurement and corrected.`
       : `${plural(ledger.verified, "line")} published, each one checked against the event stream.`;
   }
 
