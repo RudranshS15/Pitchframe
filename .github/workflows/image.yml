@@ -1,0 +1,60 @@
+# Build and publish the overlay's container image.
+#
+# The image is built in Actions rather than in an Azure registry (az acr build) for a
+# cost reason: the registry account is what has a fixed daily price, while this job
+# rides the minutes every push already gets. The package under ghcr.io is the thing the
+# Container App pulls; it is made public once, after the first successful build, because
+# an anonymous pull is what lets the app start with no pull secret anywhere.
+#
+# Runs on push to main and by hand (workflow_dispatch), so the submitted image can be
+# rebuilt from the exact tagged commit without touching anything else.
+
+name: image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pitchframe/**"
+      - "requirements.txt"
+      - "Dockerfile"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Matches the Dockerfile's pin and requirements.txt's note on 3.13 vs 3.14.
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/pitchframe
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
