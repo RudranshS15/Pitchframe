@@ -1,5 +1,7 @@
 # Pitchframe
 
+[![tests](https://github.com/RudranshS15/Pitchframe/actions/workflows/tests.yml/badge.svg)](https://github.com/RudranshS15/Pitchframe/actions/workflows/tests.yml)
+
 Real-time match intelligence from synthetic football events — turning a raw event
 stream into explainable, personalised narratives.
 
@@ -27,6 +29,9 @@ Pitchframe takes the raw event stream and produces the layer above it:
 5. **Personalise** it so an analyst and a casual fan get genuinely different views
 
 ## Quickstart
+
+New here? [docs/tutorial.md](docs/tutorial.md) walks the whole system in five
+commands, in the order a judge should run them.
 
 No dependencies, no network, no credentials. The core is standard library only:
 
@@ -363,6 +368,8 @@ pitchframe/
     demo.py        Model-free agents, with labelled fault injection.
   llm/
     provider.py    Which model tier is live, and why. Standard library only.
+    builders.py    Builds the live agent pair (Foundry, Ollama) the tier named.
+                   Imports the SDKs lazily, so nothing installed still runs offline.
     offline.py     The scripted client. No network, no credentials, no quota.
   overlay/
     replay.py      The deterministic script behind the live page. Stdlib only.
@@ -432,6 +439,13 @@ inferring an intent the model did not express, and inferring intent is the failu
 this layer exists to prevent.
 
 ### Running against a real model
+
+The model-backed agents are built on **Microsoft Agent Framework** and, in production,
+talk to a **Microsoft Foundry** model deployment authenticated through **Microsoft Entra
+ID** (`DefaultAzureCredential` — no API key exists anywhere in the project). The same
+agent objects accept **Foundry Local**, **Ollama**, and a scripted client, and tier
+selection reports which is live — see [docs/microsoft-stack.md](docs/microsoft-stack.md)
+for the one-paragraph version with the table of what is used where.
 
 The model-backed agents need `agent-framework` and are chosen automatically by tier:
 Microsoft Foundry first, then Foundry Local, then Ollama, and finally the scripted
