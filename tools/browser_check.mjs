@@ -77,7 +77,15 @@ let at = "start";
 ws.onmessage = (message) => {
   const msg = JSON.parse(message.data);
   if (msg.method === "Runtime.exceptionThrown") {
-    problems.push({ at, kind: "exception", text: msg.params.exceptionDetails.text });
+    const details = msg.params.exceptionDetails;
+    problems.push({
+      at,
+      kind: "exception",
+      text: details.text,
+      description: details.exception?.description ?? null,
+      where: details.lineNumber != null ? `line ${details.lineNumber + 1}` : null,
+      stack: details.stackTrace?.callFrames?.slice(0, 4).map((f) => `${f.functionName || "(anon)"}:${f.lineNumber + 1}:${f.columnNumber + 1}`).join(" | ") ?? null,
+    });
   }
   if (msg.method === "Runtime.consoleAPICalled" && ["error", "warning"].includes(msg.params.type)) {
     problems.push({

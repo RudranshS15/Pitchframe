@@ -143,6 +143,24 @@ def build_live_pair(tier_key: str, *, env: Mapping[str, str] | None = None) -> L
 	"""
 	if tier_key not in _PAIR_BUILDERS:
 		return None
+	# The settings check comes first *deliberately*: it names the env var the operator
+	# forgot, which is more actionable than anything the SDK could say later, and on a
+	# machine that never installed agent-framework the settings message is the honest
+	# difference between "you left something out" and "you installed nothing".
+	try:
+		client, model = _PAIR_BUILDERS[tier_key](os.environ if env is None else env)
+	except ClientUnavailable:
+		raise
+	except ImportError as exc:
+		missing = getattr(exc, "name", None) or str(exc)
+		raise ClientUnavailable(
+			f"the agent runtime is not installed ({missing}); "
+			"pip install -r requirements.txt"
+		) from exc
+	except Exception as exc:  # noqa: BLE001 — the caller only needs the message
+		raise ClientUnavailable(
+			f"{tier_key} client could not be built: {type(exc).__name__}: {exc}"
+		) from exc
 	try:
 		import agent_framework as af
 		from ..agents.narrator import NarratorAgent
@@ -152,14 +170,6 @@ def build_live_pair(tier_key: str, *, env: Mapping[str, str] | None = None) -> L
 		raise ClientUnavailable(
 			f"the agent runtime is not installed ({missing}); "
 			"pip install -r requirements.txt"
-		) from exc
-	try:
-		client, model = _PAIR_BUILDERS[tier_key](os.environ if env is None else env)
-	except ClientUnavailable:
-		raise
-	except Exception as exc:  # noqa: BLE001 — the caller only needs the message
-		raise ClientUnavailable(
-			f"{tier_key} client could not be built: {type(exc).__name__}: {exc}"
 		) from exc
 	return LivePair(
 		narrator=NarratorAgent(af.Agent(client=client, name="pitchframe-narrator")),

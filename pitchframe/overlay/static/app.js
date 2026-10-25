@@ -363,6 +363,11 @@ import { createWakeSlider } from "./wake-slider.js";
 
   function renderBoard(clock) {
     const doc = state.doc;
+    /* Before the payload lands there is no board to render: no goals, no frames, no
+       scoreboard. Leaving with everything as it was is correct — applyPayload runs its
+       own first render once the document arrives. The play button does not wait for the
+       page's own fetch, so this is a reachable state, not a hypothetical one. */
+    if (!doc) return;
     const minute = Math.min(minuteOf(Math.max(clock, 0)), 90 + Math.floor(Math.max(0, clock - 5400) / 60));
 
     const minuteLine = `${minute}<i>&prime;</i>`;
@@ -1074,6 +1079,9 @@ import { createWakeSlider } from "./wake-slider.js";
   }
 
   function revealTo(clock, { animateScroll = true } = {}) {
+    /* The same pre-payload guard the board has: state.items is built from the payload,
+       and revealing into a document that has not arrived would walk `undefined`. */
+    if (!state.doc) return;
     const stick =
       window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - NEAR_BOTTOM_PX;
     let added = 0;
