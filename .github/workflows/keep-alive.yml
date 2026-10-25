@@ -1,0 +1,38 @@
+# The hosted link stays warm.
+#
+# Render's free plan spins an idle instance down after 15 minutes, and the first
+# visitor after a sleep waits on a cold start. A ping every ten minutes is cheaper
+# than explaining "it's loading" to a judge — and it is also a continuous check that
+# the public URL really answers: if the ping ever fails, the workflow goes red on
+# the repo's badge row and no redeploy is needed to notice.
+#
+# Public repositories get Actions minutes free, and a 12-request-per-hour curl is
+# negligible bandwidth. Note the honest limits of schedules: GitHub can delay a
+# cron by some minutes when the fleet is busy, and disables a schedule that has
+# seen no push to the repository for 60 days — the hackathon window is shorter
+# than that, but if the ping goes missing in December, that enabled-then-archived
+# warning in the Actions tab is the first place to look.
+
+name: keep-alive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    name: wake the hosted overlay
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: GET /api/health
+        run: |
+          code=$(curl -s -o /tmp/health.json -w "%{http_code}" --max-time 300 "${PITCHFRAME_URL}/api/health")
+          echo "GET /api/health -> $code"
+          cat /tmp/health.json | head -c 400; echo
+          test "$code" = 200
+        env:
+          PITCHFRAME_URL: https://pitchframe.onrender.com

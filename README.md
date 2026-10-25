@@ -11,6 +11,23 @@ stream into explainable, personalised narratives.
 > tests; the thirteen that drive a real browser are behind a gate — see
 > [Development](#development)). See [Roadmap](#roadmap) for what is still open.
 
+## Live
+
+The overlay itself is hosted, built from this repo's Dockerfile on Render's free
+tier: **<https://pitchframe.onrender.com>**.
+
+- `/` — the landing page
+- `/match` — the live, synchronised match feed with the analyst and fan views
+- `/match/matchday?fault=narrator-invert` — the recovery run: a planted
+  fault rejected on screen, the ledger keeping count, the correction matched
+  against what the events actually say (any scenario page accepts `?fault=`)
+
+One honest caveat: on the free plan the instance spins down after fifteen idle
+minutes (there is no card on this account to put on a paid tier), so a link that
+has not been opened in a while takes about a minute on first load. A scheduled
+keep-alive workflow pings `/api/health` every ten minutes, so a first visit is
+usually instant — but the first user after a long idle may still pay the wake-up.
+
 ---
 
 ## The problem
