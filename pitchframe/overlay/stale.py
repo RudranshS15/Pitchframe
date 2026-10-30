@@ -144,7 +144,7 @@ def static_digest(root: Path | None = None) -> str:
     """A digest of the overlay's static assets as they are on disk now.
 
     Python source is the only thing a process can go stale on — static assets are
-    re-read on every request — but a judge asking a deployed server "which page is
+    re-read on every request — but a reader asking a deployed server "which page is
     this, exactly?" is asking about the tree the server is serving right now, and a
     hash answers it without guessing. Everything under ``static/`` counts, by the
     same content-not-timestamp rule :func:`source_digest` applies.

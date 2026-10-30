@@ -1,9 +1,9 @@
-"""Pitchframe — real-time match intelligence from synthetic football events.
+"""Pitchframe — real-time match intelligence from football event streams.
 
 The core of this package is deliberately **dependency-free**: ``schema``,
 ``generator`` and ``stats`` use the standard library only. That means the whole
 analytics pipeline can be exercised with no install, no network, and no
-credentials — which is what lets a judge run it immediately.
+credentials — which is what lets a reader run it immediately.
 
 The agent layer is the only part that reaches outward. It sits behind a
 provider abstraction with a replay mode, so the full pipeline still runs when

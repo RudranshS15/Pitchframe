@@ -98,15 +98,19 @@ code reporting the catch.
 
 ## Query parameters
 
-*Which* match is not one of these: it is in the path, `/match/<key>`, because the match is
-what the page **is** rather than a frame of it — see [Which match
-opens](#which-match-opens). Everything below belongs to `/match/<key>` and describes the
-frame on screen. The front door takes one — `fault`, which it passes on when it opens a
-card — because a page with no replay of its own has no frame to describe.
+*Which* match is not one of these: a generated match is in the path, `/match/<key>`,
+because the match is what the page **is** rather than a frame of it — see [Which match
+opens](#which-match-opens). A recorded match has no scenario name to put in a path, so it
+is named by its feed id in `statsbomb` instead. Everything below belongs to `/match/<key>`
+and describes the frame on screen. The front door takes one — `fault`, which it passes on
+when it opens a card — because a page with no replay of its own has no frame to describe.
 
 | Parameter | Default | Meaning |
 |---|---|---|
 | `seed` | the scenario's seed (`28`) | Which synthetic match, by number rather than by name — for a seed no scenario owns, and for the links written before matches had names. A number that names a match is redirected to its name and its seed dropped. |
+| `statsbomb` | none | A recorded StatsBomb open-data match, by feed id — `8658` is the 2018 World Cup final. It has no seed, so it is named by the id rather than by a number the generator would also accept. |
+| `competition` | none | The archive's competition id, sent with `statsbomb` when a match was opened from the archive. With `season`, it lets the endpoint download a match that is not cached yet, using the pair the archive named. Meaningless without `statsbomb`, and refused on its own. |
+| `season` | none | The archive's season id, the other half of the pair above. |
 | `fault` | `none` | `none` for the honest baseline, `narrator-invert` to plant one wrong direction per window. |
 | `view` | `fan` | `fan` or `analyst`. |
 | `match_id` | `PF-001` | Identifier used in generated event ids. |
@@ -120,10 +124,11 @@ http://127.0.0.1:8770/match?seed=99            # a match no scenario owns, by nu
 
 The JSON behind any frame is at `/api/replay` with the same parameters, so the page
 can be checked against the payload it came from. `/api/health` is the readiness probe,
-and it also reports whether the process agrees with the files on disk. The match reaches the
-server as `scenario=<key>` or as `seed=<number>` — the page sends the one its address gave
-it, and the endpoint refuses both at once rather than choosing. `fault` and `match_id`
-travel with it; `view`, `at` and `goal` are the page's own reading of what is on screen.
+and it also reports whether the process agrees with the files on disk, plus which recorded
+matches are cached. The match reaches the server as `scenario=<key>`, `seed=<number>` or
+`statsbomb=<id>` — the page sends the one its address gave it, and the endpoint refuses
+more than one at once rather than choosing. `fault` and `match_id` travel with it; `view`,
+`at` and `goal` are the page's own reading of what is on screen.
 
 ### A link to the frame you saw
 

@@ -4,8 +4,7 @@ The generator is the data source for everything downstream, so these tests
 guard the two properties the rest of the system relies on:
 
 1. **Determinism** — the same seed always yields an identical match. Without
-   this, the demo video is not reproducible and no evaluation number means
-   anything.
+   this, a recorded run is not reproducible and no measurement means anything.
 2. **Plausible shape** — the output looks like football rather than noise,
    which is what makes the analytics layer worth building.
 

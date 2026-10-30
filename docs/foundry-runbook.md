@@ -28,8 +28,8 @@ already consuming existing quota. The widely repeated "3–5 business days" figu
 anecdote, not a commitment — treat it as the optimistic case.
 
 **Practical consequence:** file the quota request in step 5 on the same day you
-create the resource, before deploying anything else. If you are on a deadline
-measured in days, that request is the schedule.
+create the resource, before deploying anything else. It is the only part of this
+runbook whose duration you do not control, so it is the part to start first.
 
 ---
 
@@ -216,30 +216,19 @@ reply can never be mistaken for an inference.
 
 ---
 
-## Deadlines, in IST
+## Deployment checklist
 
-The hackathon runs on Pacific Time. Your clock is IST. These are the conversions that
-actually matter:
-
-| Event | Pacific | IST |
-|---|---|---|
-| Registration closes | Oct 20, 12:00 pm PT | **Oct 21, ~00:30 IST** |
-| Submission closes | Oct 27, 11:59 pm PT | **Oct 28, ~12:29 IST** |
-
-Your effective deadline is **midday on Oct 28**, not the 27th. Register this week
-regardless of build progress — registration is not blocked by any of the above.
-
----
-
-## Submission checklist
-
-- [ ] Repository **public**, and the first commit after the registration period opened
-- [ ] Pitch and description written
-- [ ] Demo video, public, **under two minutes**
-- [ ] Working access link for judges
-- [ ] Everything in English
-- [ ] Nothing obscene, defamatory, or promoting alcohol, drugs, tobacco or politics
+- [ ] `az login` succeeds, and `python -m pitchframe --providers` names the tier you
+      expect — a fallback that is reported is not a failure, but a silent one is
+- [ ] A Foundry resource with a model deployment exists, and the quota request that is
+      the only slow part has landed
 - [ ] `python -m pitchframe --seed 7` works on a **clean machine** with no installs
+- [ ] `python -m pitchframe --statsbomb 8658` works on a clean machine with network
+      access, and the second run reads the cache
+- [ ] `python -m pitchframe --overlay --statsbomb 8658` opens the real match, with the
+      pitch chip hidden and the footer naming the feed
+- [ ] If hosted: the image carries a recorded match, or the demonstration fetches it
+      before the audience arrives — the cache is not part of the repository
 
-That last one is the one most likely to fail, because it is the one nobody tests on a
-machine other than their own.
+The clean-machine line is the one most likely to fail, because it is the one nobody
+tests on a machine other than their own.

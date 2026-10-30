@@ -9,7 +9,7 @@ tested rather than assumed. Two properties matter:
 * the fault is *labelled* — an injected failure presented as a natural one is the
   one thing that would make every other claim in this project unfalsifiable.
 
-The CLI is exercised in a subprocess, because it is the interface a judge will
+The CLI is exercised in a subprocess, because it is the interface a reader will
 actually run, and importing ``main`` would not catch a broken argv path.
 """
 
@@ -273,7 +273,7 @@ class TestRuleVerifier(unittest.TestCase):
 
 
 class TestCli(unittest.TestCase):
-    """The interface a judge runs, exercised as a real subprocess."""
+    """The interface a reader runs, exercised as a real subprocess."""
 
     def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(

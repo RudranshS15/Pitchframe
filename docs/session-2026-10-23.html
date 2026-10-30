@@ -170,9 +170,28 @@ deadline race is the behaviour being tested), the markup builders (templates, no
 decisions), and the port wiring (each control's options are the page saying what the
 control means).</p>
 
+<h2>6 · Deliverables, and where they live</h2>
+<table>
+<tr><th>File</th><th>What it is</th></tr>
+<tr><td><code>docs/session-2026-10-23.pdf</code> / this page</td><td>The session report — source HTML and the printed PDF.</td></tr>
+<tr><td><code>Desktop\pitchframe-options.html</code></td><td>The interactive flowchart of 174 options (128 leaf actions) for further work, each within the project's rules; cascades on click, breadcrumb navigation, copy-to-clipboard commands. Self-contained, no network. A workspace copy sits in <code>.tmpcheck/flowchart.html</code> for the preview panel.</td></tr>
+<tr><td><code>Desktop\Pitchframe session report.pdf</code></td><td>This report, printed again to the desktop after the first copy would not open in the user's viewer. Same content, regenerated fresh.</td></tr>
+</table>
+
+<h2>7 · Process notes — nothing hidden</h2>
+<ul>
+<li><strong>Stale server.</strong> The session's live checks began by killing a stale listener on port 8000 (its code hash predated the refactors; <code>stale.py</code> refuses to trust it) and restarting per the documented command. The fresh server reported <code>"stale": false</code>.</li>
+<li><strong>The flake bisect.</strong> The first wheel-failure diagnosis attempt was a <code>git stash</code> bisect — which found nothing to stash (the tree was already clean), so the "bisect" run actually re-tested the same HEAD and <em>passed</em>, which is what revealed the intermittence. Recorded because the inference chain, not just the conclusion, is part of the record.</li>
+<li><strong>Windows Store python alias.</strong> The ranking-agreement probe's interpreter search originally matched the Store alias, which polluted output with an installer advertisement; the search was narrowed (PYTHON, then python/py/python3) and the skip message now says to set PYTHON.</li>
+<li><strong>A test fixed, not the function.</strong> The wording test originally fed the plural function a pre-pluralised noun; the test was corrected to pass the singular noun, since the function's contract is singular-in.</li>
+<li><strong>Probe scripts.</strong> The working probes (CDP measurement scripts, the flowchart checker) live in <code>.tmpcheck/</code>, which is gitignored — they are scratch, not product. Nothing from there is committed.</li>
+<li><strong>First flowchart draft discarded.</strong> The flowchart was rewritten once: the first pass had garbled node text and two interaction bugs (re-click duplicated detail levels; historical cards re-pushed onto the path). The shipped version was verified live: renders 16 branches, cascades three levels, leaf details replace rather than duplicate, breadcrumb and Back reset correctly, console clean.</li>
+<li><strong>The PDF that would not open.</strong> The first <code>docs/session-2026-10-23.pdf</code> printed fine (219 KB, verified bytes) but the user's viewer would not open it; it was regenerated to the desktop under a simpler name, and the magic bytes and EOF marker are verified below.</li>
+</ul>
+
 <div class="foot">
 Generated from the working session on 23 October 2026 · Pitchframe <code>main</code> at
-<span class="sha">96a319e</span> · tests at close: 532 Python · 44 JS · 13/13 harness ×3 ·
+<span class="sha">69e7373</span> · tests at close: 532 Python · 44 JS · 13/13 harness ×3 ·
 committed and pushed after this report.
 </div>
 

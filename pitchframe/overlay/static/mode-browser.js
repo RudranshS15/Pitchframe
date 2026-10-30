@@ -115,7 +115,13 @@ function poster(ctx, size, entry) {
   ctx.textAlign = "left";
   ctx.fillText(fitText(ctx, entry.label.toUpperCase(), size * 0.55), size * 0.1, size * 0.15);
   ctx.textAlign = "right";
-  ctx.fillText(`SEED ${entry.seed}`, size * 0.9, size * 0.15);
+  /* A recorded match has no seed. The feed it came from is what names it — and the
+     attribution belongs on the card, not only in the documentation. */
+  ctx.fillText(
+    entry.source === "statsbomb" ? "STATSBOMB" : `SEED ${entry.seed}`,
+    size * 0.9,
+    size * 0.15
+  );
 
   /* The scoreline, which is what a reader picks a match by. */
   ctx.fillStyle = INK;
@@ -181,7 +187,11 @@ function asItem(entry) {
      place and a card cannot offer an address the server does not serve. The fault travels
      with it, because a catalogue browsed with the fault planted should open matches that
      still have it. */
-  const href = `${entry.path}${fault === "none" ? "" : `?fault=${encodeURIComponent(fault)}`}`;
+  const href = `${entry.path}${
+    fault === "none"
+      ? ""
+      : `${entry.path.includes("?") ? "&" : "?"}fault=${encodeURIComponent(fault)}`
+  }`;
   return {
     ...entry,
     /* `title` and `description` are the component's own block, used when a caller reads
@@ -220,10 +230,16 @@ function card(entry) {
 
   const eyebrow = document.createElement("p");
   eyebrow.className = "mb-card__eyebrow";
-  eyebrow.append(document.createTextNode("scenario "));
   const name = document.createElement("b");
-  name.textContent = entry.key;
-  eyebrow.append(name, document.createTextNode(` \u00b7 seed ${entry.seed}`));
+  if (entry.source === "statsbomb") {
+    eyebrow.append(document.createTextNode("recorded "));
+    name.textContent = `StatsBomb ${entry.statsbomb}`;
+    eyebrow.append(name);
+  } else {
+    eyebrow.append(document.createTextNode("scenario "));
+    name.textContent = entry.key;
+    eyebrow.append(name, document.createTextNode(` \u00b7 seed ${entry.seed}`));
+  }
   if (entry.default) {
     const badge = document.createElement("span");
     badge.className = "mb-card__badge";
@@ -363,7 +379,7 @@ async function boot() {
       ? `This browser has no WebGL2, so the sphere cannot be drawn. The same ${entries.length} ` +
         `matches are listed below, and every one of them opens the same replay.`
       : `Drag to spin, click the front card to open it. Arrow keys step, Enter opens, and ` +
-        `nothing is measured here — every card is a seed the feed already knows.`
+        `nothing is measured here — every card opens a replay the feed already knows.`
   );
 
   /* The sphere keeps a frame budget only while it is on screen and idle only while nothing

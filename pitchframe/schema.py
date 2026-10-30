@@ -9,9 +9,9 @@ Pitch coordinates are normalised to ``0-100`` on both axes. ``(0, 0)`` is the
 home team's own goal line and ``(100, 100)`` is the away team's, so the home
 team always attacks towards increasing ``x``.
 
-All squad and player names in this project are invented. The hackathon rules
-forbid third-party trademarks and unlicensed material, so we deliberately
-never reference real clubs, players, or competitions.
+The generator invents its squads; the StatsBomb adapter imports real ones. Both
+produce the same types, so the analytics, the claim layer and the overlay cannot
+tell a synthetic match from a recorded one — and a test can run against either.
 """
 
 from __future__ import annotations
@@ -88,13 +88,14 @@ class Player:
 
 @dataclass(frozen=True, slots=True)
 class Squad:
-    """One team's roster: the eleven who started, and the bench behind them.
+    """One team's roster: everyone who took part, and the bench behind them.
 
-    ``bench`` is separate from ``players`` on purpose. Everything that measures a match
-    — the ratings, the event stream, the man of the match — reads the eleven who played;
-    a substitute who never came on has no events to rate, and folding them into
-    ``players`` would invent a mark for a player the match never used. The bench is on
-    the team sheet because a roster without its substitutes is half a team sheet.
+    ``players`` is the starting eleven plus any substitute who came on — in a generated
+    match that is exactly eleven, and in an imported one it is however many the manager
+    used. ``bench`` is separate on purpose: a substitute who never came on has no events
+    to rate, and folding them into ``players`` would invent a mark for a player the match
+    never used. The bench is on the team sheet because a roster without its substitutes
+    is half a team sheet.
     """
 
     team: Team

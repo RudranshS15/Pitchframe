@@ -155,7 +155,11 @@ def chaos_index(events: Sequence[MatchEvent]) -> float:
     Measured as the coefficient of variation of the gaps between consecutive
     events. Steady possession play produces regular gaps; a chaotic spell
     produces a mixture of long lulls and bursts. This is the "control vs chaos"
-    signal the challenge brief asks the narrative layer to explain.
+    signal the narrative layer explains.
+
+    The scale is calibrated on the generator's evenly-spaced stream: recorded feeds
+    burst and pause, so this metric saturates on imported matches and is not yet a
+    trustworthy reading there. See ``docs/real-matches.md``.
     """
     clocks = sorted(e.clock for e in events)
     if len(clocks) < 3:
@@ -195,9 +199,8 @@ def longest_pressure_pass_streak(
 ) -> int:
     """Longest run of consecutive completed passes under pressure.
 
-    This is the kind of milestone the challenge brief asks for — a small,
-    human-meaningful achievement that a casual fan and an analyst would both
-    understand, and that is cheap to verify against the event stream.
+    A small, human-meaningful achievement that a casual fan and an analyst would
+    both understand, and that is cheap to verify against the event stream.
     """
     longest = 0
     current = 0

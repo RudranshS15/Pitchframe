@@ -7,11 +7,11 @@ This exists for three reasons, and the first one is schedule-critical:
    answers from a script needs no network, no credentials and no quota, so the
    whole agent pipeline can be written and tested while that request waits in a
    queue somewhere.
-2. **A judge cannot log into your Azure subscription.** The rules require the
-   project to be runnable free of charge and without restriction. This tier is
-   what makes the repository testable by anyone who clones it.
+2. **A reader cannot log into your Azure subscription.** The project has to run
+   without an account, a key or a quota request. This tier is what makes the
+   repository testable by anyone who clones it.
 3. **Verification needs to be reproducible.** A real model's output is cached to
-   make the demo video deterministic; scripting it makes the *tests* deterministic.
+   make a replay deterministic; scripting it makes the *tests* deterministic.
 
 It doubles as the fault-injection harness. A script step may be:
 

@@ -5,10 +5,10 @@ starts at zero TPM and a quota increase takes days, so if the pipeline could onl
 be exercised against a live endpoint, the schedule would sit idle waiting on a
 support ticket. Against the scripted client it can be developed and tested today.
 
-They are also the tests that keep the *no-Azure path* honest. The rules require the
-project to be runnable free of charge and without restriction, and a judge cannot
-authenticate to somebody else's subscription. If these pass on a bare machine, the
-repository is genuinely testable by anyone who clones it.
+They are also the tests that keep the *no-Azure path* honest. The project has to run
+without an account, and a reader cannot authenticate to somebody else's subscription.
+If these pass on a bare machine, the repository is genuinely testable by anyone who
+clones it.
 
 The whole module is skipped when ``agent-framework`` is absent, because the core of
 this project is standard library only and must stay runnable without it.

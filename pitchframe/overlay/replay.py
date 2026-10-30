@@ -198,6 +198,13 @@ class Replay:
     #: goal list follows, where the payload is the finished script and the page is the
     #: only thing that decides what a reader has earned the right to see yet.
     ratings: dict[str, Any]
+    #: Where the events came from: ``synthetic`` for a generated match, ``statsbomb`` for
+    #: an imported one. The page labels the match from this rather than from the seed,
+    #: because a recorded match has no seed to name.
+    source: str = "synthetic"
+    #: For an imported match: competition, season, date, stadium and the feed's match id.
+    #: ``None`` for a generated one, which has none of those things.
+    origin: dict[str, Any] | None = None
 
     @property
     def duration(self) -> int:
@@ -402,9 +409,7 @@ def _provider_payload(
     live: LivePair | None,
     fallback_note: str,
 ) -> dict[str, Any]:
-    """The honest story of what actually answered, for the banner and the doc.
-
-    This is the one line of the document a skeptical judge will read, so it says the
+    """The honest story of what actually answered, for the banner and the doc.        This is the one line of the document a skeptical reader will read, so it says the
     deciding things together: which tier ran, which model replied if one did, and why
     the answer is scripted when it is. Every field exists because something downstream
     reads it — ``matches/entity`` for the honesty copy, ``tests/test_overlay.py`` for
@@ -478,6 +483,9 @@ def build_replay(
     seed: int = DEFAULT_SEED,
     match_id: str = "PF-001",
     *,
+    match: Match | None = None,
+    source: str = "synthetic",
+    origin: dict[str, Any] | None = None,
     window_seconds: int = DEFAULT_WINDOW_SECONDS,
     first_window_start: int = DEFAULT_FIRST_WINDOW_START,
     fault: str = "none",
@@ -492,8 +500,17 @@ def build_replay(
             goals, four of them from moves long enough to draw on the build-up panel —
             because an overlay that opens on a match with nothing to show reads as
             broken however correct it is. ``scenarios.SCENARIOS['quiet'].seed`` is the
-            single-goal match, and ``--seed`` still takes any number at all.
+            single-goal match, and ``--seed`` still takes any number at all. An imported
+            match has no seed, and passes ``0``.
         match_id: identifier used in generated event ids.
+        match: an already-built match to replay instead of generating one. The imported
+            path goes through here, so a real match and a generated one are framed by
+            exactly the same code — nothing downstream branches on where the events came
+            from.
+        source: ``synthetic`` or ``statsbomb``, carried to the page so it can label the
+            match honestly instead of printing a seed that does not exist.
+        origin: for an imported match, the competition, season, date and stadium the page
+            shows in place of a seed.
         window_seconds: length of each analysed window.
         first_window_start: where the first window begins; must leave room for a
             baseline before it.
@@ -542,7 +559,8 @@ def build_replay(
         except ClientUnavailable as exc:
             live_note = str(exc)
 
-    match: Match = generate_match(seed, match_id)
+    if match is None:
+        match = generate_match(seed, match_id)
     home, away = match.home.name, match.away.name
     squads: dict[Team, Squad] = {"home": match.home, "away": match.away}
     windows = _windows_for(match.events, window_seconds, first_window_start)
@@ -632,7 +650,9 @@ def build_replay(
         # feed cannot disagree about who scored or when.
         highlights=tuple(
             highlight.to_dict()
-            for highlight in build_highlights(match.events, seed=seed, until=final_clock)
+            for highlight in build_highlights(
+                match.events, seed=seed, until=final_clock, source=source
+            )
         ),
         # Rated over the whole match, and withheld by the page until the replay reaches
         # ``decided_at``: naming a man of the match before the match has been played out
@@ -644,5 +664,8 @@ def build_replay(
             away=away,
             score=_score_at(match.events, final_clock),
             decided_at=final_clock,
+            source=source,
         ),
+        source=source,
+        origin=origin,
     )

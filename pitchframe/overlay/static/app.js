@@ -94,6 +94,15 @@ import { createWakeSlider } from "./wake-slider.js";
        built, which is what a numbered link has to carry to be reproducible. */
     scenario: namedMatch,
     seed: params.get("seed"),
+    /* A recorded match is described by the feed's id. It has no seed and no scenario name,
+       so it travels in the query alongside them rather than replacing either. */
+    statsbomb: params.get("statsbomb"),
+    /* The archive's pair. They are not a second match description: they say where the feed
+       id lives, and they are what lets a match opened from the archive be downloaded at
+       the moment it is asked for. Absent for a link copied before the archive existed,
+       which keeps the cached-only contract those links were written against. */
+    competition: params.get("competition"),
+    season: params.get("season"),
     match_id: params.get("match_id") || "PF-001",
     fault: params.get("fault") || "none",
     view: params.get("view") === "analyst" ? "analyst" : "fan",
@@ -993,6 +1002,9 @@ import { createWakeSlider } from "./wake-slider.js";
        only thing that knows the panel is gone, whatever dismissed it. */
     return `${location.pathname}?${buildFrameQuery({
       named: !!query.scenario,
+      statsbomb: query.statsbomb,
+      competition: query.competition,
+      season: query.season,
       seed: state.doc ? state.doc.seed : query.seed,
       matchId: query.match_id,
       fault: query.fault,
@@ -1244,10 +1256,17 @@ import { createWakeSlider } from "./wake-slider.js";
        those two disagreed. */
     const url = `/api/replay?match_id=${encodeURIComponent(query.match_id)}` +
       `&fault=${encodeURIComponent(query.fault)}` +
-      (query.scenario !== null ? `&scenario=${encodeURIComponent(query.scenario)}` : "") +
-      (query.scenario === null && query.seed !== null
-        ? `&seed=${encodeURIComponent(query.seed)}`
-        : "");
+      (query.statsbomb !== null
+        ? `&statsbomb=${encodeURIComponent(query.statsbomb)}` +
+          (query.competition !== null && query.season !== null
+            ? `&competition=${encodeURIComponent(query.competition)}` +
+              `&season=${encodeURIComponent(query.season)}`
+            : "")
+        : query.scenario !== null
+          ? `&scenario=${encodeURIComponent(query.scenario)}`
+          : query.seed !== null
+            ? `&seed=${encodeURIComponent(query.seed)}`
+            : "");
 
     let doc;
     try {
@@ -1283,13 +1302,33 @@ import { createWakeSlider } from "./wake-slider.js";
     title.setText(`${doc.home} v ${doc.away}`);
     teamNames[0].setText(doc.home);
     teamNames[1].setText(doc.away);
+    /* A recorded match has no seed to print; it says where and when it was played instead,
+       from the payload's own origin block rather than from anything the page inferred. */
+    const origin = doc.origin || {};
+    const description = doc.source === "statsbomb"
+      ? [
+          [origin.competition, origin.season].filter(Boolean).join(" "),
+          origin.date,
+          `match ${doc.match_id}`,
+          "StatsBomb open data",
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : `seed ${doc.seed}`;
     el.footMatch.textContent =
-      `${doc.home} v ${doc.away} · ${doc.frames.length} windows · seed ${doc.seed}` +
+      `${doc.home} v ${doc.away} · ${doc.frames.length} windows · ${description}` +
       (doc.fault === "none" ? "" : ` · fault ${doc.fault}`);
     /* The chip opens the pitch view at the seed the payload built (not the one the URL
        asked for), so a numbered link that the server rounded to a scenario cannot send
-       the reader looking at a different match from the one on screen. */
-    el.pitchOpen.href = `/static/pitch/pitch.html?seed=${encodeURIComponent(String(doc.seed))}`;
+       the reader looking at a different match from the one on screen. A recorded match
+       has no seed: the pitch view is a mock tracker, and pointing it at this match would
+       be the one place on the page claiming a position it does not have. */
+    if (doc.source === "statsbomb") {
+      el.pitchOpen.hidden = true;
+      el.pitchOpen.removeAttribute("href");
+    } else {
+      el.pitchOpen.href = `/static/pitch/pitch.html?seed=${encodeURIComponent(String(doc.seed))}`;
+    }
     renderProvider(doc.provider);
     renderSquads(doc);
 

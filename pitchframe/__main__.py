@@ -1,9 +1,12 @@
 """Command-line entry point: ``python -m pitchframe``.
 
-Generates one synthetic match and prints an analytics summary. This is the
-quickest way to confirm the core pipeline runs end to end — it needs no
-dependencies, no network, and no credentials, so it works on a bare Python
-install. The ``--json`` form is what later stages (overlay, evaluation) consume.
+Analyses one match and prints an analytics summary — a generated one by default, or a
+recorded one with ``--statsbomb``. The generated path needs no dependencies, no network
+and no credentials, so it works on a bare Python install; the recorded path downloads its
+events once and caches them. Both produce the same report, because both are the same
+:class:`~pitchframe.schema.Match` by the time they reach the analytics.
+
+The ``--json`` form is what later stages (overlay, evaluation) consume.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ import webbrowser
 from collections.abc import Sequence
 
 from .generator import generate_match
+from .ingest import statsbomb as real
 from .scenarios import (
     ALL_SCENARIOS,
     DEFAULT_SCENARIO_KEY,
@@ -65,14 +69,27 @@ def key_moments(events: Sequence[MatchEvent], limit: int) -> list[MatchEvent]:
     return notable[:limit]
 
 
-def summarise(match: Match, moments: int = 5) -> dict[str, object]:
-    """Build a JSON-serialisable summary of a match."""
+def summarise(
+    match: Match,
+    moments: int = 5,
+    *,
+    source: str = "synthetic",
+    origin: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Build a JSON-serialisable summary of a match.
+
+    ``source`` and ``origin`` describe where the events came from and are carried into
+    the report so a recorded match is never presented as a generated one. The numbers
+    themselves do not branch: both sources have already been normalised into one schema.
+    """
     events = match.events
     home_goals, away_goals = match.score
     return {
         "match_id": match.id,
         "home": match.home.name,
         "away": match.away.name,
+        "source": source,
+        "origin": origin,
         "score": {"home": home_goals, "away": away_goals},
         "event_count": len(events),
         "possession": possession_share(events),
@@ -93,6 +110,9 @@ def summarise(match: Match, moments: int = 5) -> dict[str, object]:
         "peak_speed_kmh": {
             "pass": peak_speed(events, kind="pass"),
             "shot": peak_speed(events, kind="shot"),
+            # Only a carry carries both ends and a duration in a recorded feed, so this is
+            # the one speed a real match can state rather than the generator's three.
+            "carry": peak_speed(events, kind="carry"),
         },
         "milestones": {
             "longest_pressure_pass_streak": {
@@ -121,7 +141,18 @@ def _print_report(s: dict[str, object]) -> None:
     assert isinstance(score, dict) and isinstance(possession, dict)
 
     print(f"{s['home']}  {score['home']} - {score['away']}  {s['away']}")
-    print(f"match {s['match_id']} | {s['event_count']} events\n")
+    print(f"match {s['match_id']} | {s['event_count']} events")
+    origin = s.get("origin")
+    if isinstance(origin, dict):
+        print(
+            "{competition} {season} · {date} · {stadium} · StatsBomb open data".format(
+                competition=origin.get("competition", ""),
+                season=origin.get("season", ""),
+                date=origin.get("date", ""),
+                stadium=origin.get("stadium", ""),
+            ).replace(" ·  · ", " · ")
+        )
+    print()
 
     print("  possession          "
           f"home {possession['home']:.1%}  away {possession['away']:.1%}")
@@ -140,7 +171,10 @@ def _print_report(s: dict[str, object]) -> None:
 
     speeds = s["peak_speed_kmh"]
     assert isinstance(speeds, dict)
-    print(f"  peak speed          pass {speeds['pass']:.1f} km/h | shot {speeds['shot']:.1f} km/h")
+    print(
+        f"  peak speed          pass {speeds['pass']:.1f} | "
+        f"shot {speeds['shot']:.1f} | carry {speeds['carry']:.1f} km/h"
+    )
 
     streaks = s["milestones"]
     assert isinstance(streaks, dict)
@@ -172,12 +206,13 @@ def _report_providers() -> int:
     return 0
 
 
-def _run_claims(args: argparse.Namespace, seed: int) -> int:
+def _run_claims(args: argparse.Namespace, match: Match) -> int:
     """Run one window through the propose, verify and retry loop.
 
     Uses the model-free narrator and verifier in :mod:`pitchframe.agents.demo`, so
     this works on a bare interpreter with nothing installed. The model-backed agents
-    implement the same protocols and are substituted in the same place.
+    implement the same protocols and are substituted in the same place. The match is
+    passed in because the claims do not care whether it was generated or imported.
     """
     from .agents.demo import InjectingNarrator, RuleVerifier
     from .agents.pipeline import render_snapshot, run_pipeline, snapshot
@@ -192,7 +227,6 @@ def _run_claims(args: argparse.Namespace, seed: int) -> int:
         print(f"error: --window must be start:end seconds ({exc})", file=sys.stderr)
         return 2
 
-    match = generate_match(seed, args.match_id)
     narrator = InjectingNarrator(fault=args.inject_fault)
     result = asyncio.run(
         run_pipeline(narrator, RuleVerifier(), match.events, window, baseline)
@@ -296,12 +330,111 @@ def open_when_ready(url: str, host: str, port: int, timeout: float = 20.0) -> th
     return thread
 
 
-def _run_overlay(args: argparse.Namespace, seed: int, scenario_key: str) -> int:
+def _load_real(args: argparse.Namespace) -> tuple[Match, real.MatchMeta]:
+    """Load the match named by ``--statsbomb``, downloading it if it is not cached.
+
+    Raises:
+        real.StatsBombError: when the match cannot be found or downloaded. The caller
+            turns it into a message rather than a traceback.
+    """
+    match_id = str(args.statsbomb)
+    if real.is_cached(match_id):
+        meta = real.read_meta(match_id)
+    else:
+        print(f"  fetching match {match_id} from StatsBomb open data…")
+        meta = real.fetch(
+            match_id,
+            competition=args.competition,
+            season=args.season,
+        )
+    return real.load(match_id), meta
+
+
+def _run_fetch(args: argparse.Namespace) -> int:
+    """Download one real match and say where it went and what runs on it."""
+    try:
+        meta = real.fetch(
+            args.fetch,
+            competition=args.competition,
+            season=args.season,
+            force=args.refresh,
+        )
+        match = real.load(meta.match_id)
+    except real.StatsBombError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"{meta.home_name}  {match.score[0]} - {match.score[1]}  {meta.away_name}")
+    print(f"  {meta.description}" + (f" · {meta.stadium}" if meta.stadium else ""))
+    print(f"  cached at {real.cache_dir(meta.match_id)}")
+    print(f"  analyse it:  python -m pitchframe --statsbomb {meta.match_id}")
+    print(f"  replay it:   python -m pitchframe --overlay --statsbomb {meta.match_id}")
+    return 0
+
+
+def _run_live(league: str, *, as_json: bool = False) -> int:
+    """Print one league's current matchday, from the keyless OpenLigaDB feed.
+
+    A goal feed, so the report is deliberately narrower than a recorded match's: the
+    score, the clock the adapter derives, and the goals. A live match has no lineups and
+    no pass network to report, and printing zeros for them would read as an analysis
+    rather than as the absence of one.
+    """
+    import json
+
+    from .ingest import openliga
+
+    try:
+        doc = openliga.matchday(league)
+    except openliga.OpenLigaError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if as_json:
+        print(json.dumps(doc.to_dict(), ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"{doc.name} — {doc.matchday}, season {doc.season}")
+    print(f"  updated {doc.fetched_at}" + (" (cached)" if doc.stale else ""))
+    print()
+    for match in doc.matches:
+        if match.status == "live":
+            state = f"LIVE  ~{match.minute}'"
+        elif match.status == "finished":
+            state = "FT"
+        elif match.status == "scheduled":
+            state = f"{match.kickoff[11:16]}Z"
+        else:
+            state = "pending"
+        score = (
+            f"{match.home_score:>2} - {match.away_score:<2}"
+            if match.status in {"live", "finished", "pending"}
+            else "   v  "
+        )
+        print(f"  {state:<11} {match.home:<26} {score} {match.away}")
+        for goal in match.goals:
+            print(f"              {goal.label}")
+    print(
+        "\nA live match is a goal feed. Full events, claims and ratings are available "
+        "for recorded matches: python -m pitchframe --statsbomb <id>"
+    )
+    return 0
+
+
+def _run_overlay(
+    args: argparse.Namespace,
+    seed: int,
+    scenario_key: str,
+    origin: real.MatchMeta | None = None,
+) -> int:
     """Serve the live overlay.
 
     The dependency check happens here rather than at import time so that every other
     command keeps working on an interpreter with nothing installed. A missing
     dependency is reported as a fixable instruction, not a traceback.
+
+    ``origin`` selects an imported match: the catalogue still lists every match, and the
+    server opens on the real one instead of the generated default.
     """
     try:
         import uvicorn
@@ -324,15 +457,28 @@ def _run_overlay(args: argparse.Namespace, seed: int, scenario_key: str) -> int:
     # type back later without a number they would have to write down. A `--seed` that no
     # scenario owns has no name, so it is printed the way it was asked for.
     catalogue = f"{root}/"
-    # Asked for by name when the seed is that scenario's own, and by number otherwise: a
-    # `--seed 99` names no match, and printing `/match/matchday` for it would be a link to a
-    # different match than the one this server is about to serve.
-    match = (
-        f"{root}/match/{chosen.key}" if seed == chosen.seed else f"{root}/match?seed={seed}"
-    ) + ("" if args.inject_fault == "none" else f"?fault={args.inject_fault}")
+    if origin is not None:
+        # A recorded match has no seed and no scenario name: its address is its StatsBomb
+        # id, which is the one description of it that survives into the URL.
+        match = f"{root}/match?statsbomb={origin.match_id}" + (
+            "" if args.inject_fault == "none" else f"&fault={args.inject_fault}"
+        )
+    else:
+        # Asked for by name when the seed is that scenario's own, and by number otherwise: a
+        # `--seed 99` names no match, and printing `/match/matchday` for it would be a link to
+        # a different match than the one this server is about to serve.
+        match = (
+            f"{root}/match/{chosen.key}"
+            if seed == chosen.seed
+            else f"{root}/match?seed={seed}"
+        ) + ("" if args.inject_fault == "none" else f"?fault={args.inject_fault}")
 
     print("Pitchframe overlay")
-    print(f"  scenario {chosen.key} — {chosen.note}")
+    if origin is not None:
+        print(f"  real match {origin.home_name} v {origin.away_name} — {origin.description}")
+        print(f"  StatsBomb match {origin.match_id}")
+    else:
+        print(f"  scenario {chosen.key} — {chosen.note}")
 
     # Whether this call is the one that serves, or the one that finds a server already up.
     serving = serving_here(args.host, args.port)
@@ -356,14 +502,19 @@ def _run_overlay(args: argparse.Namespace, seed: int, scenario_key: str) -> int:
     print("  Ctrl+C to stop")
     if args.open:
         open_when_ready(catalogue, args.host, args.port)
-    uvicorn.run(create_app(), host=args.host, port=args.port, log_level="warning")
+    uvicorn.run(
+        create_app(default_match=None if origin is None else origin.match_id),
+        host=args.host,
+        port=args.port,
+        log_level="warning",
+    )
     return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m pitchframe",
-        description="Generate a synthetic match and print its analytics summary.",
+        description="Analyse a match — generated, or recorded StatsBomb open data.",
     )
     parser.add_argument(
         "--scenario",
@@ -387,6 +538,47 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         dest="list_scenarios",
         help="list the named matches and their contents, then exit",
+    )
+    parser.add_argument(
+        "--statsbomb",
+        metavar="MATCH_ID",
+        default=None,
+        help="analyse or replay a recorded StatsBomb open-data match, downloading it "
+        "on first use (e.g. 8658, the 2018 World Cup final)",
+    )
+    parser.add_argument(
+        "--live",
+        nargs="?",
+        const="bl1",
+        default=None,
+        metavar="LEAGUE",
+        help="print the current matchday of a live competition and exit "
+        "(default: bl1; --matches lists the competitions)",
+    )
+    parser.add_argument(
+        "--fetch",
+        metavar="MATCH_ID",
+        default=None,
+        help="download a recorded match into the cache, then exit",
+    )
+    parser.add_argument(
+        "--competition",
+        type=int,
+        default=real.DEFAULT_COMPETITION,
+        help=f"StatsBomb competition id for --statsbomb/--fetch (default: "
+        f"{real.DEFAULT_COMPETITION}, the World Cup)",
+    )
+    parser.add_argument(
+        "--season",
+        type=int,
+        default=real.DEFAULT_SEASON,
+        help=f"StatsBomb season id for --statsbomb/--fetch (default: "
+        f"{real.DEFAULT_SEASON}, 2018)",
+    )
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="with --fetch: re-download even when a cached copy exists",
     )
     parser.add_argument("--match-id", default="PF-001", help="match identifier used in event ids")
     parser.add_argument("--moments", type=int, default=5, help="how many key moments to list")
@@ -445,6 +637,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.providers:
         return _report_providers()
 
+    if args.fetch is not None:
+        return _run_fetch(args)
+
+    if args.live is not None:
+        return _run_live(args.live, as_json=args.as_json)
+
     chosen = scenario_for(args.scenario)
     # An explicit --seed wins over the scenario's, so every command keeps taking any
     # match at all and "the named match" is only ever the default.
@@ -453,17 +651,43 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.list_scenarios:
         print("Named matches:\n")
         print(describe_scenarios())
-        print("\nPass --seed to open any other match, or --scenario <name> to open one of the above.")
+        imported = real.available()
+        if imported:
+            print("\nImported matches (cached):\n")
+            for meta in imported:
+                print(
+                    f"   {meta.match_id:<8} {meta.home_name} v {meta.away_name} — "
+                    f"{meta.description}"
+                )
+        print(
+            "\nPass --seed to open any other generated match, --scenario <name> for one "
+            "of the above, --statsbomb <id> for a recorded one, or --live to see what "
+            "is on now."
+        )
         return 0
 
+    record: Match | None = None
+    origin: real.MatchMeta | None = None
+    if args.statsbomb is not None:
+        try:
+            record, origin = _load_real(args)
+        except real.StatsBombError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+
     if args.overlay:
-        return _run_overlay(args, seed, args.scenario)
+        return _run_overlay(args, seed, args.scenario, origin)
+
+    match = record if record is not None else generate_match(seed, args.match_id)
 
     if args.claims:
-        return _run_claims(args, seed)
-
-    match = generate_match(seed, args.match_id)
-    summary = summarise(match, args.moments)
+        return _run_claims(args, match)
+    summary = summarise(
+        match,
+        args.moments,
+        source="statsbomb" if origin is not None else "synthetic",
+        origin=origin.to_dict() if origin is not None else None,
+    )
 
     if args.as_json:
         print(json.dumps(summary, indent=2))

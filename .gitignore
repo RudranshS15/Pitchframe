@@ -42,3 +42,7 @@ htmlcov/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# --- Downloaded match data ---------------------------------------------------
+# StatsBomb open data is fetched on demand, never vendored.
+data/

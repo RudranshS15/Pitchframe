@@ -6,15 +6,15 @@ ordering is a product decision, not an accident:
 ============ ====================================== ==========================
 Tier         What it is                             Why it sits here
 ============ ====================================== ==========================
-``foundry``  Azure AI Foundry, the intended path    The hero technology
+``foundry``  Azure AI Foundry, the production path The strongest tier
 ``local``    Foundry Local, models on-device        Still Foundry, no Azure needed
 ``ollama``   A local Ollama server                  Last resort with a real model
 ``offline``  Scripted replies, no model at all      Keeps the demo runnable
 ============ ====================================== ==========================
 
 The last tier is not a degraded failure mode to be hidden. It is what lets a
-judge clone the repository and see the pipeline work without an Azure
-subscription, which the rules require.
+reader clone the repository and see the pipeline work without an Azure
+subscription or an account of any kind.
 
 **The honesty rule.** Every fallback is reported, never silent. :class:`Selection`
 carries the tier that was chosen *and* the reason it was chosen, so the overlay can

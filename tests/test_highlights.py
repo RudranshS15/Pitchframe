@@ -29,6 +29,7 @@ from pitchframe.generator import generate_match
 from pitchframe.highlights import (
     CARRY_THRESHOLD,
     LABEL_DERIVED_CARRIES,
+    LABEL_STATSBOMB,
     LABEL_SYNTHETIC,
     MoveSummary,
     build_highlights,
@@ -595,6 +596,17 @@ class TestLabelling(unittest.TestCase):
         self.assertFalse(recorded.has_derived_carries)
         self.assertIn(LABEL_SYNTHETIC, recorded.labels)
         self.assertNotIn(LABEL_DERIVED_CARRIES, recorded.labels)
+
+    def test_a_recorded_match_is_not_labelled_synthetic(self) -> None:
+        """Provenance follows the source. A build-up extracted from StatsBomb's feed is
+        still a reconstruction, but it is not a *synthetic* one, and the panel says where
+        it came from."""
+        events = three_pass_move()
+        highlight = highlight_for_goal(
+            events, goal_of(events), seed=1, source="statsbomb"
+        )
+        self.assertIn(LABEL_STATSBOMB, highlight.labels)
+        self.assertNotIn(LABEL_SYNTHETIC, highlight.labels)
 
     def test_no_generated_match_ever_claims_an_inferred_carry(self) -> None:
         """A coherent stream leaves nothing to infer.

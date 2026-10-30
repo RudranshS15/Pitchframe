@@ -2,13 +2,14 @@
 
 [![tests](https://github.com/RudranshS15/Pitchframe/actions/workflows/tests.yml/badge.svg)](https://github.com/RudranshS15/Pitchframe/actions/workflows/tests.yml)
 
-Real-time match intelligence from synthetic football events — turning a raw event
+Real-time match intelligence from football event streams — turning a raw event
 stream into explainable, personalised narratives.
 
-> **Status: working end to end.** The generator, the analytics engine, the claim
-> layer, the Narrator/Verifier loop, the live overlay, the goal build-up panel and
-> the player ratings with the man of the match are implemented and tested (532
-> tests; the thirteen that drive a real browser are behind a gate — see
+> **Status: working end to end, on generated, recorded and live matches.** The StatsBomb
+> adapter, the live OpenLigaDB feed, the archive browser, the analytics engine, the claim
+> layer, the Narrator/Verifier loop, the overlay, the goal build-up panel and the player
+> ratings with the man of the match are implemented and tested (625 tests; the fourteen
+> that need a real browser or the optional agent SDK are behind a gate — see
 > [Development](#development)). See [Roadmap](#roadmap) for what is still open.
 
 ## Live
@@ -17,6 +18,7 @@ The overlay itself is hosted, built from this repo's Dockerfile on Render's free
 tier: **<https://pitchframe.onrender.com>**.
 
 - `/` — the landing page
+- `/matches` — live scores and the recorded archive, side by side
 - `/match` — the live, synchronised match feed with the analyst and fan views
 - `/match/matchday?fault=narrator-invert` — the recovery run: a planted
   fault rejected on screen, the ledger keeping count, the correction matched
@@ -27,6 +29,11 @@ minutes (there is no card on this account to put on a paid tier), so a link that
 has not been opened in a while takes about a minute on first load. A scheduled
 keep-alive workflow pings `/api/health` every ten minutes, so a first visit is
 usually instant — but the first user after a long idle may still pay the wake-up.
+
+The hosted instance carries the generated catalogue and can read the live feed. Recorded
+matches are downloaded on first use and are not baked into the image, so the archive is
+browsable and a match appears on the sphere after its first open builds the cache inside
+that container; a fresh container starts without it.
 
 ---
 
@@ -48,9 +55,26 @@ Pitchframe takes the raw event stream and produces the layer above it:
 ## Quickstart
 
 New here? [docs/tutorial.md](docs/tutorial.md) walks the whole system in five
-commands, in the order a judge should run them.
+commands, in the order a new reader should run them.
 
-No dependencies, no network, no credentials. The core is standard library only:
+A recorded match takes one command and a network connection:
+
+```bash
+python -m pitchframe --statsbomb 8658   # downloads the 2018 final, then analyses it
+```
+
+```text
+France  4 - 2  Croatia
+match 8658 | 1532 events
+FIFA World Cup 2018 · 2018-07-15 · Stadion Luzhniki · StatsBomb open data
+
+  possession          home 31.1%  away 68.9%
+  pass accuracy       home 69.2%  away 80.9%
+```
+
+What is measured, what is derived, and what the adapter refuses to invent is in
+[docs/real-matches.md](docs/real-matches.md). The rest of this file uses the generated
+match, which needs no network and no credentials — the core is standard library only:
 
 ```bash
 python -m pitchframe --seed 7
@@ -175,6 +199,31 @@ is visible; every planted row is labelled as planted.
 The URL is a description of the frame on screen — the view, the match second, and the
 build-up panel if one is open — so a glitch can be handed to somebody else as a link,
 which opens paused on exactly that second.
+
+### Live matches and the archive
+
+The sphere is a curated catalogue. `/matches` is everything else, in two lists that are
+careful about what each source actually records:
+
+- **Live and recent** reads OpenLigaDB's public matchday feed — no key, no account — for
+the Bundesliga, 2. Bundesliga, 3. Liga, DFB-Pokal, Premier League and Champions League.
+It shows the current matchday, refreshes every thirty seconds while a match is in play,
+and expands any fixture into its goals, scorer and minute, plus the moments the goal list
+supports (lead changes, a comeback, a burst of goals). It is a **goal feed**: there are no
+lineups, no passes and no ratings, and the clock is derived from kick-off and marked `~`.
+It never prints a zero where the source has no measurement.
+- **Recorded archive** lists every competition and season in StatsBomb's open data, with
+each fixture's score and whether it is already downloaded. Opening one fetches that match
+with the competition and season the archive named — not the default pair — and lands on
+the verified replay.
+
+```bash
+python -m pitchframe --live          # the current Bundesliga matchday
+python -m pitchframe --live pl       # ... or another competition
+```
+
+The source split, the derivation rules and the known limits are in
+[docs/live-matches.md](docs/live-matches.md).
 
 Behind the page is a sea of slats that swells, catches light on its crests and is stirred
 by the cursor. It is a port of the React Bits **MicroSlats** component to a module with no
@@ -349,30 +398,38 @@ contract and every consciously-named boundary case are in
 
 Requires Python 3.10+. Developed against **3.13**.
 
-## Why synthetic data
+## Why a generator as well as a feed
 
-The project generates its own matches rather than consuming a real feed. That is
-a deliberate constraint, not a shortcut:
+Recorded matches are the real test of the analytics; the generator is the fixture. It
+exists for three reasons:
 
-- **Licensing.** No match footage, event feed, or club likeness is used anywhere
-  in this project. Every squad and player name is invented.
-- **Reproducibility.** A match is a pure function of its seed, so a demo can be
-  re-recorded byte-identically and the test suite can assert on exact output.
-- **Controllability.** Edge cases — sustained pressure, chaotic end-to-end
-  spells, a dominant possession side — can be generated on demand instead of
-  waited for.
+- **Reproducibility.** A match is a pure function of its seed, so a replay can be
+  produced byte-identically and the test suite can assert on exact output.
+- **Controllability.** Edge cases — sustained pressure, chaotic end-to-end spells, a
+  dominant possession side — can be generated on demand instead of waited for.
+- **Nothing to download.** The suite, the offline demo and the catalogue run with no
+  network and no account. A recorded match needs one download; the generated ones never
+  do.
 
-None of the analytics here are invented from scratch. What we read, what it costs
-in licensing terms, and which gaps it exposes in our own metrics are recorded in
-[docs/prior-art.md](docs/prior-art.md) — including the reason our verification rate
-must not be read as a detection rate.
+Recorded matches come from StatsBomb open data under
+[their attribution terms](docs/real-matches.md#attribution), and the generated squads are
+invented, so the repository itself redistributes no third-party data. None of the
+analytics here are invented from scratch. What we read, what it costs in licensing terms,
+and which gaps it exposes in our own metrics are recorded in
+[docs/prior-art.md](docs/prior-art.md) — including the reason our verification rate must
+not be read as a detection rate.
 
 ## Architecture
 
 ```text
 pitchframe/
   schema.py        Domain types. One MatchEvent vocabulary shared by everything.
-  generator.py     Seeded synthetic match generation.
+  generator.py     Seeded synthetic match generation — the fixture.
+  ingest/
+    statsbomb.py   Recorded matches from StatsBomb open data, normalised into Match,
+                   plus the archive catalogue. Standard library only; caches downloads.
+    openliga.py    The live goal feed: score, derived clock, goals and the moments they
+                   support. Deliberately not a Match: no passes, lineups or ratings.
   scenarios.py     Which named match the overlay opens on, and what is in it.
   stats.py         Deterministic analytics + the published metric registry.
   highlights.py    Goal build-up: the path a move took, and what is inferred. Pure.
@@ -505,7 +562,10 @@ which is how the paths a browser without it takes get looked at.
 - [x] Live overlay with an analyst view and a fan view
 - [x] Goal build-up panel: possession chains, the path to a goal, labelled inferences
 - [x] Player ratings from fixed weights, and the man of the match at full time
-- [x] Mode browser: the eighteen named matches, browsable, each one a click from its replay
+- [x] Mode browser: every named match, browsable, each one a click from its replay
+- [x] Recorded matches: StatsBomb open data through the same analytics, claims and replay
+- [x] Live matches and the archive browser: `/matches`, with the goal feed kept at the
+      level of detail it actually has
 - [x] Readable per-match addresses, and a checked-in browser harness for the page's visuals
 - [x] A nav between the two pages, and a wordmark and team names that swell under the pointer
 - [ ] Analyst and Personaliser agents

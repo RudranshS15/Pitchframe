@@ -327,6 +327,7 @@ def catalogue() -> list[dict[str, object]]:
                 "label": item.label,
                 "seed": item.seed,
                 "note": item.note,
+                "source": "synthetic",
                 "default": key == DEFAULT_SCENARIO_KEY,
                 "home": facts["home"],
                 "away": facts["away"],

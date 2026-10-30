@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pitchframe — live and recorded matches</title>
+<meta name="description" content="What is on now, and what is in the archive: live goal feeds from OpenLigaDB, and every match in StatsBomb's open data, one click from the verified replay.">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23070A0F'/%3E%3Ccircle cx='16' cy='16' r='7.5' fill='none' stroke='%232FD08A' stroke-width='2.5'/%3E%3C/svg%3E">
+
+<!-- The same three faces the other pages use. Requested, never waited on: without a
+     network the page keeps the condensed and monospace system faces and never blocks. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'"
+      href="https://fonts.googleapis.com/css2?family=Oswald:wght@200..700&family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<noscript>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@200..700&family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+</noscript>
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="stylesheet" href="/static/matches.css">
+</head>
+<body class="mx">
+<a class="skip" href="#mx-main">Skip to matches</a>
+
+<div class="mx__wrap">
+
+  <header class="mx__head">
+    <p class="brand">
+      <span class="brand__mark" aria-hidden="true">PF</span>
+      <span class="brand__name" data-wordmark>Pitchframe</span>
+      <span class="brand__tag">Live &amp; archive</span>
+    </p>
+    <!-- Three ways in: the curated catalogue, this list of everything on and recorded,
+         and one match. The current page is marked for the nav's own pill; masthead.js
+         draws the control and leaves the anchors alone. -->
+    <nav class="site-nav" data-site-nav aria-label="Site">
+      <ul class="site-nav__list" data-nav-list>
+        <li><a href="/">Catalogue</a></li>
+        <li><a href="/matches" aria-current="page">Matches</a></li>
+        <li><a href="/match">The feed</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="mx-main">
+    <section class="mx__intro">
+      <p class="mx__eyebrow">Live &amp; archive</p>
+      <h1 class="mx__title">What is on,<br>and what happened</h1>
+      <p class="mx__lede">
+        Two kinds of match, and the page is careful about the difference. A <strong>live</strong>
+        match is a goal feed: the score, the clock and every goal with its scorer, refreshed
+        while the match is in play. A <strong>recorded</strong> match is a full event stream from
+        StatsBomb's open data, and opening one runs the verified replay this project is built
+        around — every published line checked against the events.
+      </p>
+    </section>
+
+    <div class="mx__tabs" role="tablist" aria-label="Match sources">
+      <button class="mx__tab" id="tab-live" type="button" role="tab"
+              aria-controls="panel-live" aria-selected="true">Live &amp; recent</button>
+      <button class="mx__tab" id="tab-archive" type="button" role="tab"
+              aria-controls="panel-archive" aria-selected="false">Recorded archive</button>
+    </div>
+
+    <section class="mx__panel" id="panel-live" role="tabpanel" aria-labelledby="tab-live"
+             tabindex="0">
+      <div class="mx__bar">
+        <label class="mx__field">
+          <span>Competition</span>
+          <select id="live-league">
+            <option value="bl1">Bundesliga</option>
+            <option value="pl">Premier League</option>
+            <option value="ucl">Champions League</option>
+            <option value="bl2">2. Bundesliga</option>
+            <option value="bl3">3. Liga</option>
+            <option value="dfb">DFB-Pokal</option>
+          </select>
+        </label>
+        <p class="mx__meta" id="live-status" role="status">Loading the current matchday…</p>
+        <button class="mx__refresh" id="live-refresh" type="button">Refresh now</button>
+      </div>
+
+      <p class="mx__note">
+        The clock is derived from kick-off and the feed's goal minutes, and is marked
+        <span class="mono">~</span> because the source does not report the live minute. The
+        scorer and the minute of every goal are recorded, not derived.
+      </p>
+
+      <div class="mx__detail" id="live-detail" hidden></div>
+      <ol class="mx__list" id="live-list"></ol>
+      <p class="mx__empty" id="live-empty" hidden></p>
+      <p class="mx__attrib">
+        Goal data from <a href="https://www.openligadb.de" rel="noreferrer">OpenLigaDB</a>.
+        No event-level data is claimed for a live match: passes, pressure and player ratings
+        need the full feed that only the recorded matches have.
+      </p>
+    </section>
+
+    <section class="mx__panel" id="panel-archive" role="tabpanel"
+             aria-labelledby="tab-archive" tabindex="0" hidden>
+      <div class="mx__bar">
+        <label class="mx__field">
+          <span>Competition</span>
+          <select id="arc-competition"></select>
+        </label>
+        <label class="mx__field">
+          <span>Season</span>
+          <select id="arc-season"></select>
+        </label>
+        <label class="mx__field mx__field--search">
+          <span>Team</span>
+          <input id="arc-search" type="search" placeholder="Filter by team" autocomplete="off">
+        </label>
+        <p class="mx__meta" id="arc-status" role="status">Loading the archive…</p>
+      </div>
+
+      <ol class="mx__list mx__list--archive" id="arc-list"></ol>
+      <p class="mx__empty" id="arc-empty" hidden></p>
+      <p class="mx__attrib">
+        Recorded matches from <a href="https://github.com/statsbomb/open-data" rel="noreferrer">StatsBomb
+        open data</a>. A match opens the full replay; the first open downloads its events and
+        lineups (a second or two), and every later open reads the cache.
+      </p>
+    </section>
+  </main>
+
+  <footer class="mx__foot">
+    <p>Pitchframe · a match is only as good as what can be checked about it</p>
+    <p class="foot__url" id="mx-url"></p>
+  </footer>
+</div>
+
+<noscript>
+  <p class="mx__status">
+    This page needs JavaScript to refresh a live score. The underlying data is still
+    reachable: <code>python -m pitchframe --live</code> prints the current matchday, and
+    <code>python -m pitchframe --statsbomb 8658</code> analyses the 2018 final.
+  </p>
+</noscript>
+
+<script type="module" src="/static/matches.js"></script>
+<script type="module" src="/static/masthead.js"></script>
+<script>
+  /* The address of this page, for a reader who wants to send it to someone. Not a module:
+     it reads one element, and matches.js owns everything else. */
+  document.getElementById("mx-url").textContent = location.origin + location.pathname;
+</script>
+</body>
+</html>

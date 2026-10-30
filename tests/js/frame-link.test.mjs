@@ -95,3 +95,42 @@ test("the link names a second, not the playhead's fraction", () => {
     "4321",
   );
 });
+
+/* A recorded match has no seed. Its stable description is the feed's match id, and a
+ * link that wrote `seed=0` would come back as the first generated match instead. */
+test("a recorded match carries its feed id, never a seed", () => {
+  const query = buildFrameQuery({
+    named: false, statsbomb: "8658", seed: 0, matchId: "8658",
+    fault: "none", view: "analyst", at: 1200, goal: null,
+  });
+  const params = new URLSearchParams(query);
+  assert.equal(params.get("statsbomb"), "8658");
+  assert.equal(params.get("seed"), null, `a recorded link must not name a seed: ${query}`);
+});
+
+/* A recorded match opened from the archive is not yet downloaded. Its competition and
+ * season are what let the recipient fetch it, so both travel with the id — and half a
+ * pair names nothing, so it is never written. A generated match ignores the pair. */
+test("a recorded link from the archive carries the pair that can fetch it", () => {
+  const query = buildFrameQuery({
+    named: false, statsbomb: "8658", competition: 43, season: 3, seed: 0,
+    matchId: "8658", fault: "none", view: "fan", at: 1200, goal: null,
+  });
+  const params = new URLSearchParams(query);
+  assert.equal(params.get("competition"), "43");
+  assert.equal(params.get("season"), "3");
+
+  const half = new URLSearchParams(buildFrameQuery({
+    named: false, statsbomb: "8658", competition: 43, season: null, seed: 0,
+    matchId: "8658", fault: "none", view: "fan", at: 1200, goal: null,
+  }));
+  assert.equal(half.get("competition"), null, "half a pair names nothing");
+  assert.equal(half.get("season"), null);
+
+  const generated = new URLSearchParams(buildFrameQuery({
+    named: false, seed: 28, competition: 43, season: 3, matchId: "PF-001",
+    fault: "none", view: "fan", at: 1200, goal: null,
+  }));
+  assert.equal(generated.get("competition"), null);
+  assert.equal(generated.get("season"), null);
+});

@@ -39,7 +39,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from .highlights import LABEL_SYNTHETIC
+from .highlights import LABEL_STATSBOMB, LABEL_SYNTHETIC
 from .schema import MatchEvent, Squad, Team
 from .stats import PRESSURE_THRESHOLD
 
@@ -140,8 +140,15 @@ FLOOR, CEILING = 1.0, 10.0
 
 #: Provenance, rendered by the panel verbatim the way the build-up panel renders its own.
 #: The second label is the distinction that matters: a rating is computed from the
-#: synthetic stream, not taken from anything a person awarded.
+#: stream, not taken from anything a person awarded. The first follows the source, so a
+#: recorded match is not labelled synthetic.
 LABELS = (LABEL_SYNTHETIC, "ratings computed, not awarded")
+
+
+def labels_for(source: str) -> tuple[str, str]:
+    """The provenance labels for one source: generated or recorded."""
+    first = LABEL_STATSBOMB if source == "statsbomb" else LABEL_SYNTHETIC
+    return (first, "ratings computed, not awarded")
 
 
 @dataclass(frozen=True, slots=True)
@@ -694,6 +701,7 @@ def ratings_payload(
     away: str,
     score: tuple[int, int],
     decided_at: int,
+    source: str = "synthetic",
 ) -> dict[str, Any]:
     """The whole ratings block: the labels, the moment the award is made, and the award.
 
@@ -707,7 +715,7 @@ def ratings_payload(
     rows = rate_squads(events, squads, score=score)
     award = award_for(rows, home=home, away=away, score=score)
     return {
-        "labels": list(LABELS),
+        "labels": list(labels_for(source)),
         "decided_at": decided_at,
         "award": None if award is None else award.to_dict(),
     }

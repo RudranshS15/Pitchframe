@@ -23,7 +23,7 @@ reported honestly in the UI.
 | Foundry Local (planned seam) / Ollama (`OllamaChatClient`) | the same agent objects on local tiers, no subscription needed | [pitchframe/llm/builders.py](../pitchframe/llm/builders.py) |
 | Scripted client (`ScriptedChatClient`) | the offline tier: the full loop with a model-free replies, the one CI tests | [pitchframe/llm/offline.py](../pitchframe/llm/offline.py) |
 
-One sentence to reuse verbatim in a submission form:
+In one sentence:
 
 > Pitchframe builds its agent layer on **Microsoft Agent Framework**, runs its agents
 > against **Microsoft Foundry** model deployments authenticated through **Microsoft

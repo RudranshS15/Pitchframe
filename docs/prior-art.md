@@ -215,7 +215,7 @@ Features a SofaScore-shaped product has that we do not:
   (**MIT**, 549★) is the standard Python pitch-plotting library — `Pitch`,
   `Radar`, heatmaps, arrows, coordinate standardisation. It would let us export a
   static PNG shot map or pass network straight from the pipeline, which is a
-  shareable artifact for a submission page. Note
+  shareable artifact for a write-up. Note
   [slothfulwave/soccerplots](https://github.com/slothfulwave/soccerplots) (MIT)
   has merged into mplsoccer and should not be started with.
 - **A momentum chart rather than a momentum number.** We compute momentum; a

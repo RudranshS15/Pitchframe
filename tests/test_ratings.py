@@ -359,6 +359,16 @@ class AwardTests(unittest.TestCase):
         self.assertEqual(payload["award"]["player_id"], "A07")
         self.assertIn("tally", payload["award"])
 
+    def test_a_recorded_match_is_labelled_recorded(self) -> None:
+        """The first label is provenance, and it follows the stream: a rating computed
+        over StatsBomb events is not a synthetic one."""
+        payload = ratings_payload(
+            [], {}, home="A", away="B", score=(0, 0), decided_at=5400,
+            source="statsbomb",
+        )
+        self.assertEqual(payload["labels"][0], "recorded StatsBomb match")
+        self.assertEqual(payload["labels"][1], LABELS[1])
+
     def test_the_award_is_none_when_there_is_nobody_to_give_it_to(self) -> None:
         """A hand-built fixture with no squads is a replay nobody is in, and the
         panel has to have something to render."""

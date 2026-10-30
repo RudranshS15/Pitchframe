@@ -12,7 +12,8 @@
  * No DOM, no `location`, no state: the build takes the frame as values and hands
  * back the query string; the read takes the raw params and hands back what they
  * name. `at` and `goal` place the reader rather than parameterise the request, so
- * they never reach the server — the fetch sends only match_id, seed and fault.
+ * they never reach the server — the fetch sends only match_id, the match description
+ * (statsbomb plus its archive pair, or scenario/seed) and fault.
  */
 
 /**
@@ -30,9 +31,23 @@
  * - **A build-up goes in only while it is open.** `goal` is passed as the same key
  *   the timeline keys goals by, so the link speaks the payload's vocabulary.
  */
-export function buildFrameQuery({ named, seed, matchId, fault, view, at, goal }) {
+export function buildFrameQuery({
+  named, seed, matchId, fault, view, at, goal, statsbomb = null,
+  competition = null, season = null,
+}) {
   const share = new URLSearchParams();
-  if (!named) share.set("seed", String(seed));
+  /* A recorded match is named by its feed id, not by a seed: it has no seed, and writing
+     `seed=0` into the link would open a generated match on the way back. Its archive pair
+     travels with it when both halves are present, because that is what lets the recipient
+     download a match this page has opened from the archive. Half a pair names nothing and
+     is not written. */
+  if (statsbomb) {
+    share.set("statsbomb", String(statsbomb));
+    if (competition !== null && season !== null) {
+      share.set("competition", String(competition));
+      share.set("season", String(season));
+    }
+  } else if (!named) share.set("seed", String(seed));
   share.set("match_id", matchId);
   share.set("fault", fault);
   share.set("view", view);

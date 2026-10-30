@@ -1,10 +1,10 @@
 """Synthetic, football-realistic match generation.
 
-The hackathon rules require synthetic data — no real match footage or licensed
-event feeds — so this module *is* the data source. Every match is driven by a
-seeded ``random.Random`` instance and is therefore reproducible from its seed.
-That matters twice over: the demo video can be re-recorded identically, and the
-test suite can assert on exact output.
+The project's own data source, and now its fixture. Recorded matches arrive through
+:mod:`pitchframe.ingest.statsbomb`; this module generates the deterministic matches the
+tests, the offline run and the catalogue depend on. Every match is driven by a seeded
+``random.Random`` instance and is therefore reproducible from its seed — which is what
+lets a test assert on exact output and a replay be recorded byte-identically.
 
 The model is deliberately simple but coherent. Possession moves around the
 pitch; passes and tackles resolve probabilistically based on distance and
@@ -13,8 +13,8 @@ produces an event stream with the right *shape* for the analytics layer above
 it — the pass volumes, scoring rates and pressure distributions all sit in
 plausible ranges.
 
-All squad and player names are invented. See the trademark note in
-:mod:`pitchframe.schema`.
+All squad and player names here are invented. Imported squads keep their real names and
+are attributed to StatsBomb open data in ``docs/real-matches.md``.
 """
 
 from __future__ import annotations

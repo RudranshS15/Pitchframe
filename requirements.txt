@@ -18,7 +18,7 @@
 #
 # 3.14 is newer but the dependency chain (pydantic-core, numpy, pythonnet,
 # grpcio) does not ship wheels for it yet, so installing there means building
-# from source or failing outright. 3.13 is what the README asks judges to use.
+# from source or failing outright. 3.13 is what the README asks readers to use.
 # ---------------------------------------------------------------------------
 #
 # Only the packages this project imports by name are pinned. agent-framework is a

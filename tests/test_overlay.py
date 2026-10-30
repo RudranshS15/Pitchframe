@@ -514,7 +514,7 @@ class TestServerShell(unittest.TestCase):
         self.assertIn('id="hl"', feed.text)
 
     def test_the_page_loads_its_own_assets(self) -> None:
-        """A page whose stylesheet 404s still renders, and looks broken to a judge."""
+        """A page whose stylesheet 404s still renders, and looks broken to a reader."""
         for asset in ("/static/styles.css", "/static/app.js", "/static/mode-browser.js"):
             with self.subTest(asset=asset):
                 self.assertEqual(self.client.get(asset).status_code, 200)
@@ -632,7 +632,7 @@ class TestServerShell(unittest.TestCase):
 
         The Python digest says whether the process agrees with the files; the static
         digest says which assets it is carrying; the start time says when it began —
-        the three facts a judge with only the probe can check a live link against."""
+        the three facts a reader with only the probe can check a live link against."""
         body = self.client.get("/api/health").json()
         code = body["code"]
         self.assertIn("static", code)

@@ -62,6 +62,7 @@ __all__ = [
     "highlight_payload",
     "DEFAULT_MATCH_ID",
     "LABEL_SYNTHETIC",
+    "LABEL_STATSBOMB",
     "LABEL_DERIVED_CARRIES",
 ]
 
@@ -89,6 +90,7 @@ _THIRD = PITCH_LENGTH / 3.0
 _TOUCH_KINDS = {"pass": "pass", "carry": "carry", "shot": "shot"}
 
 LABEL_SYNTHETIC = "synthetic match"
+LABEL_STATSBOMB = "recorded StatsBomb match"
 LABEL_DERIVED_CARRIES = "derived carries"
 
 StepKind = Literal["pass", "carry", "shot"]
@@ -446,17 +448,23 @@ def summarise_move(
 
 
 def highlight_for_goal(
-    events: Sequence[MatchEvent], goal: MatchEvent, *, seed: int
+    events: Sequence[MatchEvent],
+    goal: MatchEvent,
+    *,
+    seed: int,
+    source: str = "synthetic",
 ) -> GoalHighlight:
     """Build the full highlight for one goal, labels included.
 
     The labels are attached here rather than by the view, so no renderer can show a
-    highlight without them. Every payload states that it came from a synthetic match;
-    one carrying an inferred step additionally says so.
+    highlight without them. The provenance label follows where the events came from:
+    calling a build-up from a recorded match "synthetic" would be the one line on the
+    panel that lied about its source. One carrying an inferred step additionally says
+    so.
     """
     steps = extract_build_up(events, goal)
     summary = summarise_move(steps, goal_clock=goal.clock)
-    labels = [LABEL_SYNTHETIC]
+    labels = [LABEL_STATSBOMB if source == "statsbomb" else LABEL_SYNTHETIC]
     if any(step.derived for step in steps):
         labels.append(LABEL_DERIVED_CARRIES)
 
@@ -481,6 +489,7 @@ def build_highlights(
     *,
     seed: int,
     until: int | None = None,
+    source: str = "synthetic",
 ) -> tuple[GoalHighlight, ...]:
     """A highlight for every goal, in clock order.
 
@@ -490,9 +499,10 @@ def build_highlights(
             payload can be regenerated on its own, without the rest of the match.
         until: ignore goals after this match second. The overlay passes its own final
             clock, so a shortened replay does not advertise goals it never reaches.
+        source: ``synthetic`` or ``statsbomb``, carried into each highlight's labels.
     """
     return tuple(
-        highlight_for_goal(events, event, seed=seed)
+        highlight_for_goal(events, event, seed=seed, source=source)
         for event in events
         if event.type == "goal" and (until is None or event.clock <= until)
     )

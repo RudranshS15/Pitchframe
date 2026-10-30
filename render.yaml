@@ -1,4 +1,4 @@
-# The hosted judge link, on Render's free web service.
+# The hosted demo link, on Render's free web service.
 #
 # The plan we landed on: no Azure subscription exists on the student account, so the
 # container goes where a card is not required. Render's free web service takes this
@@ -7,7 +7,7 @@
 # so nothing in the image had to change.
 #
 # The one trade-off, stated plainly: the free instance sleeps after 15 minutes
-# without traffic, and the first visitor after a sleep waits about a minute. Judges
+# without traffic, and the first visitor after a sleep waits about a minute. Anyone
 # clicking the link should be told that, or a keep-alive ping can be added later.
 #
 # Deploy by linking the repo in the Render dashboard ("New +" -> "Blueprint"),
@@ -22,5 +22,5 @@ services:
     healthCheckPath: /api/health
     # Every push to the default branch rebuilds and redeploys the live URL.
     autoDeploy: true
-    # Region nearest the judges; free instances run on shared hardware.
+    # Region nearest the audience; free instances run on shared hardware.
     region: oregon
